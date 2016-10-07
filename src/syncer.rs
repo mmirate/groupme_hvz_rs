@@ -8,14 +8,14 @@ use std::collections::BTreeMap;
 use rustc_serialize::{Encodable,Decodable};
 use error::*;
 
-pub struct Comm<I: std::iter::Iterator<Item=T>, T: Clone + Eq + Ord> { l: std::iter::Peekable<I>, r: std::iter::Peekable<I>, }
-impl<I: std::iter::Iterator<Item=T>, T: Clone + Ord> Comm<I,T> {
-    pub fn new(left: I, right: I) -> Comm<I, T> {
+pub struct Comm<I: std::iter::Iterator<Item=T>, J: std::iter::Iterator<Item=T>, T: Clone + Eq + Ord> { l: std::iter::Peekable<I>, r: std::iter::Peekable<J>, }
+impl<I: std::iter::Iterator<Item=T>, J: std::iter::Iterator<Item=T>, T: Clone + Ord> Comm<I, J, T> {
+    pub fn new(left: I, right: J) -> Comm<I, J, T> {
         Comm { l: left.peekable(), r: right.peekable(), }
     }
 }
 
-impl<I: std::iter::Iterator<Item=T>, T: Clone + Eq + Ord> Iterator for Comm<I, T> {
+impl<I: std::iter::Iterator<Item=T>, J: std::iter::Iterator<Item=T>, T: Clone + Eq + Ord> Iterator for Comm<I, J, T> {
     type Item = (std::cmp::Ordering, T);
     fn next(&mut self) -> Option<Self::Item> { // http://stackoverflow.com/a/32020190/6274013
         let which = match (self.l.peek(), self.r.peek()) {
@@ -53,9 +53,9 @@ pub fn comm_algorithm_memoryintensive<T>(left: Vec<T>, right: Vec<T>) -> Vec<(st
     shrink_to_fit(ret)
 }
 
-fn comm_list<T>(new: Vec<T>, old: Vec<T>, heed_deletions: bool) -> (Vec<T>, Vec<T>, Vec<T>) where T: Clone + Eq + Ord {
+fn comm_list<T>(new: Vec<T>, old: &Vec<T>, heed_deletions: bool) -> (Vec<T>, Vec<T>, Vec<T>) where T: Clone + Eq + Ord {
     let (mut all, mut additions, mut deletions) : (Vec<T>, Vec<T>, Vec<T>) = (Vec::with_capacity(new.len()), vec![], vec![]);
-    for (o, x) in Comm::new(new.into_iter(), old.into_iter()) {
+    for (o, x) in Comm::new(new.into_iter(), old.iter().cloned()) {
         match o {
             std::cmp::Ordering::Equal => all.push(x),
             std::cmp::Ordering::Less => { additions.push(x.clone()); all.push(x) },
@@ -65,15 +65,15 @@ fn comm_list<T>(new: Vec<T>, old: Vec<T>, heed_deletions: bool) -> (Vec<T>, Vec<
     (shrink_to_fit(all), shrink_to_fit(additions), shrink_to_fit(deletions))
 }
 
-fn comm_map<K, T>(new: BTreeMap<K, Vec<T>>, old: BTreeMap<K, Vec<T>>, heed_deletions: bool) -> (BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>) where T: Clone + Decodable + Encodable + Eq + Ord, K: Ord + Clone + Decodable + Encodable {
+fn comm_map<K, T>(new: BTreeMap<K, Vec<T>>, old: &BTreeMap<K, Vec<T>>, heed_deletions: bool) -> (BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>) where T: Clone + Decodable + Encodable + Eq + Ord, K: Ord + Clone + Decodable + Encodable {
     let (mut all, mut additions, mut deletions) : (BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>) = (BTreeMap::new(), BTreeMap::new(), BTreeMap::new());
 
-    for ((key, new_value), (ko, old_value)) in new.into_iter().zip(old.into_iter()) {
-        assert!(key == ko);
+    for ((key, new_value), (ko, old_value)) in new.into_iter().zip(old.iter()) {
+        assert!(&key == ko);
         let (a, d, l) : (Vec<T>, Vec<T>, Vec<T>) = comm_list::<T>(new_value, old_value, heed_deletions);
         all.remove(&key); all.insert(key.clone(), a);
         additions.remove(&key); additions.insert(key, d);
-        deletions.remove(&ko); deletions.insert(ko, l);
+        deletions.remove(&ko); deletions.insert(ko.clone(), l);
     }
 
     //let keys = new.keys().cloned().collect::<Vec<K>>();
@@ -131,22 +131,26 @@ pub fn readout<T>(conn: &postgres::Connection, k: &str) -> T where T: rustc_seri
     //read(conn, k).map(String::as_str).and_then(rustc_serialize::json::decode).unwrap_or_default()
 }
 
-pub fn update_list<T>(conn: &postgres::Connection, k: &str, new: Vec<T>, old: Vec<T>, heed_deletions: bool) -> ResultB<(Vec<T>, Vec<T>, Vec<T>)> where T: Clone + Decodable + Encodable + Eq + Ord + Debug {
+pub fn update_list<T>(conn: &postgres::Connection, k: &str, new: Vec<T>, old: &Vec<T>, heed_deletions: bool) -> ResultB<(Vec<T>, Vec<T>, Vec<T>)> where T: Clone + Decodable + Encodable + Eq + Ord + Debug {
     let (all, additions, deletions) = comm_list(new, old, heed_deletions);
-    let i = try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
-    if i != 1 {
-        println!("i = {:?}\nall = {:?}", i, all);
-        assert!(false);
+    if !(additions.is_empty() && deletions.is_empty()) {
+        let i = try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
+        if i != 1 {
+            println!("i = {:?}\nall = {:?}", i, all);
+            assert!(false);
+        }
     }
     Ok((all, additions, deletions))
 }
 
-pub fn update_map<K, T>(conn: &postgres::Connection, k: &str, new: BTreeMap<K, Vec<T>>, old: BTreeMap<K, Vec<T>>, heed_deletions: bool) -> ResultB<(BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>)> where T: Clone + rustc_serialize::Decodable + rustc_serialize::Encodable + Eq + Ord + Debug, K: Ord + Clone + Decodable + Encodable + Debug {
+pub fn update_map<K, T>(conn: &postgres::Connection, k: &str, new: BTreeMap<K, Vec<T>>, old: &BTreeMap<K, Vec<T>>, heed_deletions: bool) -> ResultB<(BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>)> where T: Clone + rustc_serialize::Decodable + rustc_serialize::Encodable + Eq + Ord + Debug, K: Ord + Clone + Decodable + Encodable + Debug {
     let (all, additions, deletions) = comm_map(new, old, heed_deletions);
-    let i = try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
-    if i != 1 {
-        println!("i = {:?}\nall = {:?}", i, all);
-        assert!(false);
+    if !(additions.is_empty() && deletions.is_empty()) {
+        let i = try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
+        if i != 1 {
+            println!("i = {:?}\nall = {:?}", i, all);
+            assert!(false);
+        }
     }
     Ok((all, additions, deletions))
 }

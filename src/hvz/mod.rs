@@ -98,10 +98,10 @@ impl HvZScraper {
     fn do_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, canfail: bool) -> hyper::Result<hyper::client::response::Response> {
         let r = self.read_cookies(rb).send();
         //println!("response: {:?}", r);
-        r.map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { Ok(res) } else { Err(hyper::error::Error::Method) })
+        r.map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { Ok(res) } else { println!("NON-SLURP FAILED: {:?}", res); Err(hyper::error::Error::Method) })
     }
     fn do_and_slurp_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, read: bool, canfail: bool) -> hyper::Result<String> {
-        self.read_cookies(rb).send().map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { if read { Self::slurp(res).map_err(hyper::error::Error::Io) } else { Ok(String::new()) } } else { Err(hyper::error::Error::Method) })
+        self.read_cookies(rb).send().map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { if read { Self::slurp(res).map_err(hyper::error::Error::Io) } else { Ok(String::new()) } } else { println!("SLURP FAILED: {:?}", res); Err(hyper::error::Error::Method) })
     }
     fn _redirect_url(res: &hyper::client::response::Response) -> Option<url::Url> {
         match res.headers.get::<hyper::header::Location>() { Some(&hyper::header::Location(ref loc)) => { res.url.join(loc).ok() }, _ => None }

@@ -15,7 +15,7 @@ pub mod hvz_syncer {
     #[derive(Debug)] pub struct HvZSyncer { pub killboard: hvz::Killboard, pub chatboard: hvz::Chatboard, pub panelboard: hvz::Panelboard, scraper: hvz::HvZScraper, conn: syncer::postgres::Connection, }
     pub type Changes<T> = (T, T);
     impl HvZSyncer {
-        pub fn new() -> HvZSyncer { // TODO read the gorram db
+        pub fn new() -> HvZSyncer {
             let mut me = HvZSyncer { scraper: hvz::HvZScraper::new(), conn: syncer::setup(), killboard: hvz::Killboard::new(), chatboard: hvz::Chatboard::new(), panelboard: hvz::Panelboard::new(), };
             std::mem::replace(&mut me .killboard, syncer::readout(&me.conn, "killboard"));
             std::mem::replace(&mut me .chatboard, syncer::readout(&me.conn, "chatboard"));
@@ -30,18 +30,18 @@ pub mod hvz_syncer {
             me
         }
         pub fn update_killboard(&mut self) -> ResultB<Changes<hvz::Killboard>> {
-            let (killboard, additions, deletions) = try!(syncer::update_map(&self.conn, "killboard", try!(self.scraper.fetch_killboard()), std::mem::replace(&mut self.killboard, hvz::Killboard::new()), true));
+            let (killboard, additions, deletions) = try!(syncer::update_map(&self.conn, "killboard", try!(self.scraper.fetch_killboard()), &self.killboard, true));
             self.killboard = killboard;
             Ok((additions, deletions))
         }
         #[inline] pub fn new_zombies(&mut self) -> ResultB<Vec<hvz::Player>> { Ok(try!(self.update_killboard()).0.remove(&hvz::Faction::Human).unwrap_or(vec![])) }
         pub fn update_chatboard(&mut self) -> ResultB<Changes<hvz::Chatboard>> {
-            let (chatboard, additions, deletions) = try!(syncer::update_map(&self.conn, "chatboard", try!(self.scraper.fetch_chatboard()), std::mem::replace(&mut self.chatboard, hvz::Chatboard::new()), true));
+            let (chatboard, additions, deletions) = try!(syncer::update_map(&self.conn, "chatboard", try!(self.scraper.fetch_chatboard()), &self.chatboard, true));
             self.chatboard = chatboard;
             Ok((additions, deletions))
         }
         pub fn update_panelboard(&mut self) -> ResultB<Changes<hvz::Panelboard>> {
-            let (panelboard, additions, deletions) = try!(syncer::update_map(&self.conn, "panelboard", try!(self.scraper.fetch_panelboard()), std::mem::replace(&mut self.panelboard, hvz::Panelboard::new()), true));
+            let (panelboard, additions, deletions) = try!(syncer::update_map(&self.conn, "panelboard", try!(self.scraper.fetch_panelboard()), &self.panelboard, true));
             self.panelboard = panelboard;
             Ok::<Changes<hvz::Panelboard>, Box<std::error::Error>>((additions, deletions))
         }
@@ -63,17 +63,18 @@ pub mod groupme_syncer {
             GroupmeSyncer { group: group, last_message_id: last_message_id, members: vec![], conn: conn }
         }
         pub fn update_messages(&mut self) -> ResultB<Vec<groupme::Message>> { // TODO fscking database I/O
-            let last_message_id = std::mem::replace(&mut self.last_message_id, None);
+            let last_message_id = self.last_message_id.clone();
+            println!("last_message_id = {:?}", &last_message_id);
             let selector = last_message_id.clone().map(groupme::MessageSelector::After);
-            //let selector = match self.last_message_id {
+            //let selector = match last_message_id {
             //    Some(ref m) => Some(groupme::MessageSelector::After(m.clone())),
             //    None => None,
             //};
             println!("selector = {:?}", selector);
-            let ret = try!(self.group.generic_slurp_messages(selector));
+            let ret = try!(self.group.generic_slurp_messages(selector.clone()));
             self.last_message_id = if ret.len() > 0 { Some(ret[ret.len()-1].id.clone()) } else { last_message_id };
             if let Some(ref last_message_id) = self.last_message_id { try!(syncer::write_dammit(&self.conn, (self.group.group_id.clone() + "last_message_id").as_str(), last_message_id.as_str())); }
-            Ok(ret)
+            if let Some(_) = selector { Ok(ret) } else { Ok(vec![]) }
         }
     }
 
