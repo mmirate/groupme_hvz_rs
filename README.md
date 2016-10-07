@@ -45,9 +45,9 @@ In the file `Procfile`, replace the letter-"X" by the Group ID of your personal 
 
 ### 4. Heroku
 
-Compile the program by running `cargo build`.
+Compile the program by running `cargo build --release`.
 
-Copy the program (`target/debug/groupme_hvz_rs`) to the root of the repo, commit, and deploy to Heroku. Follow any other relevant instructions in Heroku's documentation.
+Copy the program (`target/release/groupme_hvz_rs`) to the root of the repo, commit, and deploy to Heroku. Follow any other relevant instructions in Heroku's documentation.
 
 ### 5. Verify
 

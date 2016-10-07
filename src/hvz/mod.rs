@@ -120,7 +120,7 @@ impl HvZScraper {
         let res = self.do_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true);
         client.set_redirect_policy(hyper::client::RedirectPolicy::FollowNone);
         if res.is_err() || res.unwrap().url.host_str().unwrap() != "hvz.gatech.edu" {
-            let (body, u) = Self::_fill_login_form(scraper::Html::parse_document(unwrap(self.do_and_slurp_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true, false)).as_str()));
+            let (body, u) = Self::_fill_login_form(scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true, false)).as_str()));
             let mut res = try!(self.do_with_cookies(client.post(u.as_str()).body(&body).header(form_type()), true));
             while res.url.host_str().unwrap_or("") != "hvz.gatech.edu" {
                 if let Some(loc) = Self::_redirect_url(&res) { if loc.host_str().unwrap_or("") == "hvz.gatech.edu" { break; } }
@@ -148,7 +148,6 @@ impl HvZScraper {
         //}
         //client.unwrap()
     }
-    // TODO make this shite return Results ffs
     pub fn whois(&mut self, gtname: &str) -> ResultB<Player> {
         let client = try!(self.login());
         Ok(Player::from(scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get(&format!("https://hvz.gatech.edu/profile/?gtname={}", gtname)), true, false)).as_str())))
