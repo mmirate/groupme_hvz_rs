@@ -14,6 +14,11 @@ static API_URL: &'static str = "https://api.groupme.com/v3";
 static API_KEY: &'static str = "hunter2";
 use ::error::*;
 
+macro_rules! client {
+    () => (Client::new());
+    //() => (Client::with_http_proxy("localhost", 8080));
+}
+
 #[inline] fn json_type() -> hyper::header::ContentType { hyper::header::ContentType(hyper::mime::Mime(hyper::mime::TopLevel::Application, hyper::mime::SubLevel::Json,vec![(hyper::mime::Attr::Charset,hyper::mime::Value::Utf8)])) }
 //#[inline] fn form_type() -> hyper::header::ContentType { hyper::header::ContentType(hyper::mime::Mime(hyper::mime::TopLevel::Application, hyper::mime::SubLevel::WwwFormUrlEncoded,vec![(hyper::mime::Attr::Charset,hyper::mime::Value::Utf8)])) }
 
@@ -48,18 +53,18 @@ pub trait Endpoint {
 pub struct Groups;
 impl Endpoint for Groups { #[inline] fn base_url() -> url::Url { url_extend(url::Url::parse(API_URL).unwrap(), &["groups"]) } }
 impl Groups {
-    pub fn show(group_id: &str) -> ResultB<Json> { response(Client::new().get(Self::build_url(&[group_id])).send()) }
+    pub fn show(group_id: &str) -> ResultB<Json> { response(client!().get(Self::build_url(&[group_id])).send()) }
     pub fn index(page: Option<usize>, per_page: Option<usize>, former: Option<bool>) -> ResultB<Json> {
         let (page, per_page, former) = (page.unwrap_or(1), clamp(per_page.unwrap_or(500), 1, 500), former.unwrap_or(false));
         let mut u = Self::build_url(if former {vec!["former"]} else {vec![]});
         u.query_pairs_mut().append_pair("page", &format!("{}", page)).append_pair("per_page", &format!("{}", per_page));
-        let r = Client::new().get(u.as_str()).send();
+        let r = client!().get(u.as_str()).send();
         //println!("{:?}", r);
         response(r)
     }
     pub fn create(params: &GroupsCreateReqEnvelope) -> ResultB<Json> {
         let u = Self::build_url(Vec::<&str>::new());
-        response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(params).unwrap()).header(json_type()).send())
+        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(params).unwrap()).header(json_type()).send())
     }
     //pub fn oldcreate(name: String, description: Option<String>, image_url: Option<String>, share: Option<bool>) -> ResultB<Json> {
     //    let u = Self::build_url(Vec::<&str>::new());
@@ -72,11 +77,11 @@ impl Groups {
     //        image_url.map(|s| m.insert("image_url".to_string(), Json::String(s)));
     //        m.insert("share".to_string(), Json::Boolean(share.unwrap_or(true)));
     //    }
-    //    response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
+    //    response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
     //}
     pub fn update(group_id: &str, params: &GroupsUpdateReqEnvelope) -> ResultB<Json> {
         let u = Self::build_url(vec![group_id, "update"]);
-        response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(params).unwrap()).header(json_type()).send())
+        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(params).unwrap()).header(json_type()).send())
     }
     //pub fn oldupdate(group_id: &str, name: Option<String>, description: Option<String>, image_url: Option<String>, share: Option<bool>) -> ResultB<Json> {
     //    let u = Self::build_url(vec![group_id, "update"]);
@@ -89,11 +94,11 @@ impl Groups {
     //        image_url.map(|s| m.insert("image_url".to_string(), Json::String(s)));
     //        share.map(|b| m.insert("share".to_string(), Json::Boolean(b)));
     //    }
-    //    response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
+    //    response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
     //}
     pub fn destroy(group_id: &str) -> ResultB<()> {
         let u = Self::build_url(vec![group_id, "destroy"]);
-        empty_response(Client::new().post(u.as_str()).send())
+        empty_response(client!().post(u.as_str()).send())
     }
 }
 
@@ -107,15 +112,15 @@ impl Members {
         //let mut o = Json::Object(std::collections::BTreeMap::new());
         //o.as_object_mut().unwrap().insert("members".to_string(), Json::Array(members.into_iter().map(|x| MemberId::from(x).to_json()).collect::<Vec<MemberId>>()));
         let o = _MemberIds { members: members.into_iter().map(|x| MemberId::from(x)).collect::<Vec<MemberId>>() };
-        response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
+        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
     }
     pub fn results(group_id: &str, result_id: &str) -> ResultB<Json> {
         let u = Self::build_url(vec![group_id, "members", "results", result_id]);
-        response(Client::new().post(u.as_str()).send())
+        response(client!().post(u.as_str()).send())
     }
     pub fn remove(group_id: &str, membership_id: &str) -> ResultB<()> {
         let u = Self::build_url(vec![group_id, "members", membership_id, "remove"]);
-        empty_response(Client::new().post(u.as_str()).send())
+        empty_response(client!().post(u.as_str()).send())
     }
 }
 
@@ -142,7 +147,7 @@ impl MessageEndpoint for Messages {
             }
             m.append_pair("limit", &format!("{}", limit));
         }
-        response(Client::new().get(u.as_str()).send())
+        response(client!().get(u.as_str()).send())
     }
     fn create(group_id: &str, text: String, attachments: Vec<Json>) -> ResultB<Json> {
         let u = Self::build_url(vec![group_id, "messages"]);
@@ -164,7 +169,7 @@ impl MessageEndpoint for Messages {
         //    m.insert("text".to_string(), Json::String(text));
         //    m.insert("attachments".to_string(), Json::Array(attachments));
         //}
-        response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(&Json::Object(m_p)).unwrap()).header(json_type()).send())
+        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&Json::Object(m_p)).unwrap()).header(json_type()).send())
     }
     #[inline] fn conversation_id(sub_id: String) -> ResultB<String> { Ok(sub_id) }
 }
@@ -183,7 +188,7 @@ impl MessageEndpoint for DirectMessages {
                 &None => ()
             }
         }
-        response(Client::new().get(u.as_str()).send())
+        response(client!().get(u.as_str()).send())
     }
     fn create(recipient_id: &str, text: String, attachments: Vec<Json>) -> ResultB<Json> {
         let u = Self::build_url(vec![recipient_id]);
@@ -198,7 +203,7 @@ impl MessageEndpoint for DirectMessages {
             m.insert("text".to_string(), Json::String(text));
             m.insert("attachments".to_string(), Json::Array(attachments));
         }
-        response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
+        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
     }
     fn conversation_id(sub_id: String) -> ResultB<String> { Ok(try!(User::get()).user_id + "+" + &sub_id) }
 }
@@ -227,11 +232,11 @@ impl Endpoint for Likes { #[inline] fn base_url() -> url::Url { url_extend(url::
 impl Likes {
     pub fn create(conversation_id: &str, message_id: &str) -> ResultB<()> {
         let u = Self::build_url(vec![conversation_id, message_id, "like"]);
-        empty_response(Client::new().post(u.as_str()).send())
+        empty_response(client!().post(u.as_str()).send())
     }
     pub fn destroy(conversation_id: &str, message_id: &str) -> ResultB<()> {
         let u = Self::build_url(vec![conversation_id, message_id, "unlike"]);
-        empty_response(Client::new().post(u.as_str()).send())
+        empty_response(client!().post(u.as_str()).send())
     }
 }
 
@@ -240,7 +245,7 @@ impl Endpoint for Bots { #[inline] fn base_url() -> url::Url { url_extend(url::U
 impl Bots {
     pub fn index() -> ResultB<Json> {
         let u = Self::build_url(Vec::<&str>::new());
-        response(Client::new().get(u.as_str()).send())
+        response(client!().get(u.as_str()).send())
     }
     pub fn create(group_id: String, name: String, avatar_url: Option<String>, callback_url: Option<String>) -> ResultB<Json> {
         let u = Self::build_url(Vec::<&str>::new());
@@ -257,7 +262,7 @@ impl Bots {
             avatar_url.map(|s| m.insert("avatar_url".to_string(), Json::String(s)));
             //callback_url.map(|s| m.insert("callback_url".to_string(), Json::String(s)));
         }
-        response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
+        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
     }
     pub fn post(bot_id: &str, text: String, attachments: Vec<Json>) -> ResultB<()> {
         let u = Self::build_url(vec!["post"]);
@@ -273,7 +278,7 @@ impl Bots {
             m.insert("picture_url".to_string(), Json::Null);
             m.insert("attachments".to_string(), Json::Array(attachments));
         }
-        empty_response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
+        empty_response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
     }
     pub fn destroy(bot_id: &str) -> ResultB<Json> {
         let u = Self::build_url(vec!["destroy"]);
@@ -284,7 +289,7 @@ impl Bots {
             let mut m = o.as_object_mut().unwrap();//.get_mut("message").unwrap().as_object_mut().unwrap();
             m.insert("bot_id".to_string(), Json::String(bot_id.to_string()));
         }
-        response(Client::new().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
+        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
     }
 }
 
@@ -293,7 +298,7 @@ impl Endpoint for Users { #[inline] fn base_url() -> url::Url { url_extend(url::
 impl Users {
     pub fn me() -> ResultB<Json> {
         let u = Self::build_url(vec!["me"]);
-        response(Client::new().get(u.as_str()).send())
+        response(client!().get(u.as_str()).send())
     }
 }
 
