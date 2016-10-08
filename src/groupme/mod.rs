@@ -41,7 +41,7 @@ impl Bot {
 pub trait ConversationId<E: MessageEndpoint> { fn conversation_id(&self, sub_id: String) -> ResultB<String> { E::conversation_id(sub_id) } }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, RustcDecodable, RustcEncodable)]
-pub struct Message { pub id: String, source_guid: String, pub created_at: u64, pub user_id: String, pub recipient_id: Option<String>, pub group_id: Option<String>, pub name: String, /*pub avatar_url: String,*/ pub text: String, pub system: Option<bool>, pub favorited_by: Vec<String> }
+pub struct Message { pub id: String, source_guid: String, pub created_at: u64, pub user_id: String, pub recipient_id: Option<String>, pub group_id: Option<String>, pub name: String, /*pub avatar_url: String,*/ pub text: Option<String>, pub system: Option<bool>, pub favorited_by: Vec<String> }
 impl Message {
     fn conversation_id(&self) -> ResultB<String> {
         let no_id = Box::new(rustc_serialize::json::DecoderError::MissingFieldError("message had un-ID'ed parent".to_string()));
@@ -53,6 +53,7 @@ impl Message {
     }
     pub fn like(&self) -> ResultB<()> { self::api::Likes::create(&try!(self.conversation_id()), &self.id) }
     pub fn unlike(&self) -> ResultB<()> { self::api::Likes::destroy(&try!(self.conversation_id()), &self.id) }
+    pub fn text(&self) -> String { self.text.clone().unwrap_or_default() } // GroupMe. Did you really have to put '"text": null' instead of '"text": ""'? Really?! Look at how much work this makes me do!
 }
 
 #[derive(RustcDecodable)] struct MessagesEnvelope { messages: Vec<Message> }

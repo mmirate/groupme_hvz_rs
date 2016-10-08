@@ -231,11 +231,11 @@ pub mod conduit_to_groupme {
         fn tick(&mut self, i: usize) -> ResultB<()> {
             let new_cnc_messages = try!(self.cncsyncer.update_messages());
             for message in new_cnc_messages {
-                if message.text == "!mic check please" {
+                if message.text() == "!mic check please" {
                     try!(self.cncsyncer.group.post("<> mic check; aye, aye".to_string(), None));
                     try!(self.mic_check());
                 }
-                if message.text == "!heartbeat please" {
+                if message.text() == "!heartbeat please" {
                     try!(self.cncsyncer.group.post("<> quick mic check; aye, aye".to_string(), None));
                     try!(self.quick_mic_check());
                 }
@@ -307,11 +307,11 @@ pub mod conduit_to_hvz {
             let new_messages = try!(self.syncer.update_messages());
             println!("new_messages.len() = {:?}", new_messages.len());
             for message in new_messages {
-                if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text.as_str()) {
+                if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
                     if let Some(m) = cs.name("message") {
                         try!(self.syncer.group.post(format!("{: <1$}", m, self.syncer.group.members.len()), Some(vec![self.syncer.group.mention_everyone()])));
                     }
-                } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text.as_str()) {
+                } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
                     if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
                         try!(self.scraper.post_chat(f.into(), format!("[{} from GroupMe] {}", message.name, m).as_str()));
                         //println!("{}", format!("[{} from GroupMe] {}", message.name, m));
