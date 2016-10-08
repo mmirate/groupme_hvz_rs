@@ -126,15 +126,17 @@ impl HvZScraper {
                 if let Some(loc) = Self::_redirect_url(&res) { if loc.host_str().unwrap_or("") == "hvz.gatech.edu" { break; } }
                 let (body, u) = Self::_fill_login_form(scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true, true)).as_str()));
                 res = try!(self.do_with_cookies(client.post(u.as_str()).body(&body).header(form_type()), true));
-                assert!(res.status.is_success() || res.status.is_redirection());
+                if !(res.status.is_success() || res.status.is_redirection()) { return Err(hyper::error::Error::Method); }
             }
             while let Some(loc) = Self::_redirect_url(&res)  {
                 res = try!(self.do_with_cookies(client.get(loc/*res.url.as_str()*/), true));
-                assert!(res.status.is_success() || res.status.is_redirection());
+                if !(res.status.is_success() || res.status.is_redirection()) { return Err(hyper::error::Error::Method); }
             }
         }
         //println!("{:?}", &self.cookiejar);
-        assert!(try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/rules/"), true)).url.host_str().unwrap_or("") == "hvz.gatech.edu"); // login credentials were correct?
+        if !(try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/rules/"), true)).url.host_str().unwrap_or("") == "hvz.gatech.edu") { // login credentials were correct?
+            return Err(hyper::error::Error::Method);
+        }
         client.set_redirect_policy(hyper::client::RedirectPolicy::FollowAll);
         Ok(client)
     }

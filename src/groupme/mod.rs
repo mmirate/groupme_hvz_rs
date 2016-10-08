@@ -17,6 +17,10 @@ use rustc_serialize::json::Json;
 
 fn trace<T: Debug>(x: T) -> T { println!("{:?}", x); x }
 
+#[derive(Debug)] pub struct TextTooLongError { pub text: String }
+impl std::fmt::Display for TextTooLongError { fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "Message {:?} cannot be sent via GroupMe", self.text) } }
+impl std::error::Error for TextTooLongError { fn description(&self) -> &str { "A message was too long for GroupMe." } }
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, RustcDecodable, RustcEncodable)]
 pub struct Bot { pub bot_id: String, pub group_id: String, pub name: String, pub avatar_url: Option<String>, pub callback_url: Option<String> }
 #[derive(RustcDecodable)] struct BotEnvelope { bot: Bot }
@@ -30,7 +34,7 @@ impl Bot {
         }
     }
     pub fn list() -> ResultB<Vec<Self>> { Ok(try!(Vec::<Self>::decode(&mut rustc_serialize::json::Decoder::new(try!(self::api::Bots::index()))))) }
-    pub fn post(&self, text: String, attachments: Option<Vec<Json>>) -> ResultB<()> { assert!(text.len() < 1000); self::api::Bots::post(&self.bot_id, text, attachments.unwrap_or_default()) }
+    pub fn post(&self, text: String, attachments: Option<Vec<Json>>) -> ResultB<()> { if text.len() >= 1000 { return Err(Box::new(TextTooLongError { text: text})); } self::api::Bots::post(&self.bot_id, text, attachments.unwrap_or_default()) }
     pub fn destroy(self) -> Result<(), (Self, Box<std::error::Error>)> { Ok(try!(self::api::Groups::destroy(&self.group_id).map(|_| ()).map_err(|e| (self, e)))) }
 }
 
@@ -56,7 +60,7 @@ impl Message {
 pub trait Recipient<E: MessageEndpoint> : ConversationId<E> {
     fn id(&self) -> &str;
     //fn message_count(&self) -> usize;
-    fn post(&self, text: String, attachments: Option<Vec<Json>>) -> ResultB<Json> { assert!(text.len() < 1000); E::create(self.id(), text, attachments.unwrap_or_default()) }
+    fn post(&self, text: String, attachments: Option<Vec<Json>>) -> ResultB<Json> { if text.len() >= 1000 { return Err(Box::new(TextTooLongError { text: text})); } E::create(self.id(), text, attachments.unwrap_or_default()) }
     //fn decode_messages(v: Vec<Json>) -> ResultB<Vec<Message>> {
     //    let mut ret = Vec::with_capacity(v.len());
     //    for m in v.into_iter() { ret.push(try!(Message::decode(&mut rustc_serialize::json::Decoder::new(m)))); }
