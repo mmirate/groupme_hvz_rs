@@ -1,6 +1,7 @@
 extern crate openssl;
 pub extern crate postgres;
 extern crate rustc_serialize;
+extern crate users;
 use std;
 use std::fmt::Debug;
 use std::iter::Iterator;
@@ -87,7 +88,7 @@ fn comm_map<K, T>(new: BTreeMap<K, Vec<T>>, old: &BTreeMap<K, Vec<T>>, heed_dele
 }
 
 pub fn setup() -> postgres::Connection {
-    let conn = postgres::Connection::connect(std::env::var("DATABASE_URL").expect("Heroku didn't provide a database url?").as_str(), postgres::SslMode::Prefer(&openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Sslv23).unwrap())).unwrap();
+    let conn = postgres::Connection::connect(std::env::var("DATABASE_URL").unwrap_or(format!("postgresql://{}@localhost", users::get_user_by_uid(users::get_current_uid()).unwrap().name())).as_str(), postgres::SslMode::Prefer(&openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Sslv23).unwrap())).unwrap();
     conn.execute("CREATE TABLE IF NOT EXISTS blobs (key VARCHAR PRIMARY KEY, val TEXT)", &[]).unwrap();
     conn
 }
