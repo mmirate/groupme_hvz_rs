@@ -105,6 +105,7 @@ pub mod conduit_to_groupme {
     use hvz_syncer;
     use groupme_syncer;
     extern crate chrono;
+    use self::chrono::Timelike;
     use groupme;
     use groupme::{Recipient};
     use periodic;
@@ -240,6 +241,8 @@ pub mod conduit_to_groupme {
                     try!(self.quick_mic_check());
                 }
             }
+            let hour = chrono::Local::now().hour();
+            if 2 < hour && hour < 7 { return Ok(()); }
             if i % 5 == 0 {
                 let (additions, deletions) = try!(self.hvz.update_killboard());
                 for (faction, new_members) in additions.into_iter() {
@@ -262,19 +265,21 @@ pub mod conduit_to_groupme {
                     }
                 }
             }
+            if i % 6 == 1 {
+                let (additions, deletions) = try!(self.hvz.update_panelboard());
+                for (kind, new_panels) in additions.into_iter() {
+                    let role = BotRole::Panel(kind);
+                    match self.bots.get(&role) {
+                        Some(ref bot) => for panel in new_panels.into_iter() { try!(bot.post(format!("{: <1$}", role.phrase(panel.title.as_str()), self.factiongroup.members.len()), Some(vec![self.factiongroup.mention_everyone()]))); }, // TODO do more stuff with this
+                        None => {} // TODO debug-log this stuff
+                    }
+                }
+            }
             let (additions, deletions) = try!(self.hvz.update_chatboard());
             for (faction, new_messages) in additions.into_iter() {
                 let role = BotRole::Chat(faction);
                 match self.bots.get(&role) {
                     Some(ref bot) => for message in new_messages.into_iter() { try!(bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)); },
-                    None => {} // TODO debug-log this stuff
-                }
-            }
-            let (additions, deletions) = try!(self.hvz.update_panelboard());
-            for (kind, new_panels) in additions.into_iter() {
-                let role = BotRole::Panel(kind);
-                match self.bots.get(&role) {
-                    Some(ref bot) => for panel in new_panels.into_iter() { try!(bot.post(format!("{: <1$}", role.phrase(panel.title.as_str()), self.factiongroup.members.len()), Some(vec![self.factiongroup.mention_everyone()]))); }, // TODO do more stuff with this
                     None => {} // TODO debug-log this stuff
                 }
             }
