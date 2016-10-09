@@ -64,7 +64,7 @@ fn actual_main() -> ! {
     let mut i = 0;
     loop {
         for c in conduits.iter_mut() {
-            match c.tick(i) { Ok(()) => {}, Err(e) => { std::io::stderr().write(format!("FATAL ERROR: {}", e).as_bytes()).unwrap(); } };
+            match c.tick(i) { Ok(()) => {}, Err(e) => { std::io::stderr().write(format!("\x07FATAL ERROR: {}", e).as_bytes()).unwrap(); } };
         }
         i += 1;
         i %= 1<<15;
