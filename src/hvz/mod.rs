@@ -72,12 +72,16 @@ impl<'a> From<scraper::ElementRef<'a>> for Panel { fn from(div: scraper::Element
 
 type MyCookieJar = BTreeMap<String, hyper::header::CookiePair>;
 
-#[derive(Clone, Debug)] pub struct HvZScraper { cookiejar: MyCookieJar, }
+lazy_static!{
+    static ref CLIENT: hyper::client::Client = hyper::client::Client::new();
+}
+
+#[derive(Clone, Debug)] pub struct HvZScraper { cookiejar: MyCookieJar, last_login: std::time::Instant, }
 
 fn unwrap<T,E: std::fmt::Debug>(r: Result<T,E>) -> T { r.unwrap() }
 
 impl HvZScraper {
-    pub fn new() -> HvZScraper { HvZScraper { cookiejar: MyCookieJar::new()/*, client: hyper::client::Client::new()*/ } }
+    pub fn new() -> HvZScraper { HvZScraper { cookiejar: MyCookieJar::new(), last_login: std::time::Instant::now() - std::time::Duration::from_secs(1200)/*, client: hyper::client::Client::new()*/ } }
     fn read_cookies<'b>(&self, rb: hyper::client::RequestBuilder<'b>) -> hyper::client::RequestBuilder<'b> {
         let h = hyper::header::Cookie(self.cookiejar.values().cloned().collect());
         //println!("Cookie: {:?}", h);
@@ -117,6 +121,7 @@ impl HvZScraper {
     }
     fn _login(&mut self) -> hyper::error::Result<hyper::client::Client> {
         let mut client = hyper::client::Client::new();
+        if self.last_login.elapsed() < std::time::Duration::from_secs(600) { return Ok(client); }
         let res = self.do_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true);
         client.set_redirect_policy(hyper::client::RedirectPolicy::FollowNone);
         if res.is_err() || res.unwrap().url.host_str().unwrap() != "hvz.gatech.edu" {
@@ -138,6 +143,7 @@ impl HvZScraper {
             return Err(hyper::error::Error::Method);
         }
         client.set_redirect_policy(hyper::client::RedirectPolicy::FollowAll);
+        self.last_login = std::time::Instant::now();
         Ok(client)
     }
     #[inline] pub fn login(&mut self) -> ResultB<hyper::client::Client> {
