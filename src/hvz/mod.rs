@@ -72,10 +72,6 @@ impl<'a> From<scraper::ElementRef<'a>> for Panel { fn from(div: scraper::Element
 
 type MyCookieJar = BTreeMap<String, hyper::header::CookiePair>;
 
-lazy_static!{
-    static ref CLIENT: hyper::client::Client = hyper::client::Client::new();
-}
-
 #[derive(Clone, Debug)] pub struct HvZScraper { cookiejar: MyCookieJar, last_login: std::time::Instant, }
 
 fn unwrap<T,E: std::fmt::Debug>(r: Result<T,E>) -> T { r.unwrap() }

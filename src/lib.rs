@@ -209,7 +209,7 @@ pub mod conduit_to_groupme {
                 try!(bot.post(role.watdo(), None));
             }
             {
-                let mut it = self.bots.iter();
+                let mut it = self.bots.iter().cycle();
                 if let Some((_, bot)) = it.next() {
                     try!(bot.post("Oh, and be careful. If our operator dies, so do we.".to_string(), None));
                     if let Some((_, bot)) = it.next() {
