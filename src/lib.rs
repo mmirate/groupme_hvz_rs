@@ -240,6 +240,17 @@ pub mod conduit_to_groupme {
                     try!(self.cncsyncer.group.post("<> quick mic check; aye, aye".to_string(), None));
                     try!(self.quick_mic_check());
                 }
+                if message.text() == "!headcount please" {
+                    try!(self.cncsyncer.group.post("<> headcount; aye, aye".to_string(), None));
+                    let (h, z) = (self.hvz.killboard.get(&hvz::Faction::Human).map(Vec::len).unwrap_or_default(), self.hvz.killboard.get(&hvz::Faction::Zombie).map(Vec::len).unwrap_or_default());
+                    if let Some(bot) = self.bots.get(&BotRole::Killboard(if z == 0 { hvz::Faction::Human } else { hvz::Faction::Zombie })) {
+                        if z == 0 {
+                            try!(bot.post(format!("Thusfar we have recruited {} people to the cause of Humanity. Hail Victory!", h), None));
+                        } else {
+                            try!(bot.post(format!("You currently have {} Humans versus {} Zombies. Fight harder!", h, z), None));
+                        }
+                    }
+                }
             }
             let hour = chrono::Local::now().hour();
             if 2 < hour && hour < 7 { return Ok(()); }
