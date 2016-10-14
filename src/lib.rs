@@ -41,7 +41,7 @@ pub mod hvz_syncer {
             Ok((additions, deletions))
         }
         pub fn update_panelboard(&mut self) -> ResultB<Changes<hvz::Panelboard>> {
-            let (panelboard, additions, deletions) = try!(syncer::update_map(&self.conn, "panelboard", try!(self.scraper.fetch_panelboard()), &self.panelboard, true));
+            let (panelboard, additions, deletions) = try!(syncer::update_map(&self.conn, "panelboard", try!(self.scraper.fetch_panelboard()), &self.panelboard, false));
             self.panelboard = panelboard;
             Ok::<Changes<hvz::Panelboard>, Box<std::error::Error>>((additions, deletions))
         }
@@ -252,7 +252,7 @@ pub mod conduit_to_groupme {
                         for member in new_members.iter() {
                             try!(self.cncsyncer.group.post(format!("New player: {}@gatech.edu - {}", member.gtname, member.playername), None));
                         }
-                        //continue;
+                        continue;
                     }
                     let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
                     match self.bots.get(&role) {
