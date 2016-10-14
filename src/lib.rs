@@ -189,8 +189,8 @@ pub mod conduit_to_groupme {
 
     fn ts(m: &hvz::Message) -> String {
         let min = (chrono::Local::now() - m.timestamp).num_minutes();
-        if min > 60 { m.timestamp.format(" %a %H:%M:%S ").to_string() }
-        else if min > 2 { m.timestamp.format(" %H:%M:%S ").to_string() }
+        if min > 60 { m.timestamp.format(" [%a %H:%M:%S] ").to_string() }
+        else if min > 2 { m.timestamp.format(" [%H:%M:%S] ").to_string() }
         else { " ".to_string() }
     }
 
