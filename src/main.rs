@@ -69,7 +69,7 @@ fn actual_main() -> ! {
         i += 1;
         i %= 1<<15;
         println!("==== Sleeping now. ====");
-        std::thread::sleep(std::time::Duration::new(5,0));
+        std::thread::sleep(std::time::Duration::new(10,0));
     }
 }
 
