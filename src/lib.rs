@@ -12,7 +12,7 @@ pub mod hvz_syncer {
     use hvz;
     use syncer;
     use error::*;
-    #[derive(Debug)] pub struct HvZSyncer { pub killboard: hvz::Killboard, pub chatboard: hvz::Chatboard, pub panelboard: hvz::Panelboard, scraper: hvz::HvZScraper, conn: syncer::postgres::Connection, }
+    #[derive(Debug)] pub struct HvZSyncer { pub killboard: hvz::Killboard, pub chatboard: hvz::Chatboard, pub panelboard: hvz::Panelboard, pub scraper: hvz::HvZScraper, conn: syncer::postgres::Connection, }
     pub type Changes<T> = (T, T);
     impl HvZSyncer {
         pub fn new() -> HvZSyncer {
@@ -99,7 +99,7 @@ pub mod periodic {
     }
 }
 
-pub mod conduit_to_groupme {
+pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     use std;
     use hvz;
     use hvz_syncer;
@@ -114,6 +114,7 @@ pub mod conduit_to_groupme {
     //use rustc_serialize::json::ToJson;
     use std::convert::Into;
     use error::*;
+    extern crate regex;
 
     fn nll(items: Vec<&str>) -> String {
         if let Some((tail, init)) = items.split_last() {
@@ -131,10 +132,11 @@ pub mod conduit_to_groupme {
         }
     }
 
-    #[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)] enum BotRole { Chat(hvz::Faction), Killboard(hvz::Faction)/*, Panel(hvz::PanelKind)*/ }
+    #[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)] enum BotRole { VoxPopuli, Chat(hvz::Faction), Killboard(hvz::Faction)/*, Panel(hvz::PanelKind)*/ }
     impl BotRole {
         fn nickname(&self) -> String {
             match self {
+                &BotRole::VoxPopuli => "Vox Populi".to_string(),
                 &BotRole::Chat(f) => capitalize(&format!("{} Chat", f)),
                 &BotRole::Killboard(hvz::Faction::Zombie) => "The Messenger".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Fleet Sgt. Ho".to_string(),
@@ -145,6 +147,7 @@ pub mod conduit_to_groupme {
         }
         fn avatar_url(&self) -> Option<String> {
             match self {
+                &BotRole::VoxPopuli => "http://oyster.ignimgs.com/mediawiki/apis.ign.com/bioshock-infinite/thumb/2/2a/BillBoard_Daisy_Render.jpg/468px-BillBoard_Daisy_Render.jpg".to_string().into(),
                 &BotRole::Chat(hvz::Faction::Human) => "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Georgia_Tech_Outline_Interlocking_logo.svg/640px-Georgia_Tech_Outline_Interlocking_logo.svg.png".to_string().into(),
                 &BotRole::Chat(hvz::Faction::General) => "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Georgia_Tech_Outline_Interlocking_logo.svg/640px-Georgia_Tech_Outline_Interlocking_logo.svg.png".to_string().into(),
                 &BotRole::Chat(hvz::Faction::Zombie) => "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Georgia_Tech_Outline_Interlocking_logo.svg/640px-Georgia_Tech_Outline_Interlocking_logo.svg.png".to_string().into(),
@@ -158,6 +161,7 @@ pub mod conduit_to_groupme {
         }
         fn watdo(&self) -> String {
             match self {
+                &BotRole::VoxPopuli => "If you start your message with \"@Everyone\" or \"@everyone\" while I'm still alive, I'll repost it in such a way that it will mention everyone. Abuse this, and there will be consequences.".to_string(),
                 &BotRole::Chat(f) => format!("I'm the voice of {} chat. When someone posts something there, I'll tell you about it within a few seconds.{}", f, if f == hvz::Faction::General { " Except during gameplay hours, because spam is bad." } else { "" }),
                 &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within about a minute.".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Whenever someone signs up, I'll report it here.".to_string(),
@@ -174,6 +178,7 @@ pub mod conduit_to_groupme {
                 }),*] }
             }
             let formats: &[fn(&str) -> String] = match self {
+                &BotRole::VoxPopuli => messages!["{}"],
                 &BotRole::Chat(hvz::Faction::Zombie) => messages!["{}"],
                 &BotRole::Chat(hvz::Faction::Human) => messages!["{}"],
                 &BotRole::Chat(_) => messages!["{:?}"],
@@ -195,14 +200,14 @@ pub mod conduit_to_groupme {
     }
 
 
-    pub struct ConduitHvZToGroupme { factiongroup: groupme::Group, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, }
+    pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, }
     impl ConduitHvZToGroupme {
         pub fn new(factiongroup: groupme::Group, cncgroup: groupme::Group) -> Self {
             let mut bots = std::collections::BTreeMap::new();
-            for role in vec![BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie)/*, BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)*/].into_iter() {
+            for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie)/*, BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)*/].into_iter() {
                 bots.insert(role, groupme::Bot::upsert(&factiongroup, role.nickname(), role.avatar_url(), None).unwrap());
             }
-            ConduitHvZToGroupme { factiongroup: factiongroup, cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(), bots: bots }
+            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(), bots: bots }
         }
         pub fn mic_check(&mut self) -> ResultB<()> {
             for (role, bot) in self.bots.iter() {
@@ -220,12 +225,11 @@ pub mod conduit_to_groupme {
                     }
                 }
             }
-            try!(self.factiongroup.post("Two other notable features. (1) If you start your message with \"@Everyone\" or \"@everyone\" while I'm still alive, I'll repost it in such a way that it will mention everyone. Abuse this, and there will be consequences.".to_string(), None));
-            try!(self.factiongroup.post("(2) If you start your message with \"@Human Chat\" or \"@General Chat\" while I'm still alive, I'll repost it to the requested HvZ website chat.".to_string(), None));
+            try!(self.factionsyncer.group.post("One other thing. If you start your message with \"@Human Chat\" or \"@General Chat\" while I'm still alive, I'll repost it to the requested HvZ website chat.".to_string(), None));
             Ok(())
         }
         pub fn quick_mic_check(&mut self) -> ResultB<()> {
-            self.factiongroup.post("Okay, the bot is online again.".to_string(), None).map(|_| ())
+            self.factionsyncer.group.post("Okay, the bot is online again.".to_string(), None).map(|_| ())
         }
     }
     impl periodic::Periodic for ConduitHvZToGroupme {
@@ -252,6 +256,37 @@ pub mod conduit_to_groupme {
                     }
                 }
             }
+            lazy_static!{
+                static ref MESSAGE_TO_HVZCHAT_RE: regex::Regex = regex::Regex::new(r"^@(?P<faction>(?:[Gg]en(?:eral)?|[Aa]ll)|(?:[Hh]um(?:an)?)|(?:[Zz]omb(?:ie)?))(?: |-)?(?:[Cc]hat)? (?P<message>.+)").unwrap();
+                static ref MESSAGE_TO_EVERYONE_RE: regex::Regex = regex::Regex::new(r"^@[Ee]veryone (?P<message>.+)").unwrap();
+                static ref MESSAGE_TO_ADMINS_RE: regex::Regex = regex::Regex::new(r"^@[Aa]dmins (?P<message>.+)").unwrap();
+            }
+            let new_messages = try!(self.factionsyncer.update_messages());
+            println!("new_messages.len() = {:?}", new_messages.len());
+            for message in new_messages {
+                if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
+                    if let Some(m) = cs.name("message") {
+                        if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
+                            try!(vox.post(format!("{: <1$}", m, self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()])));
+                        }
+                    }
+                } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
+                    if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
+                        try!(self.hvz.scraper.post_chat(f.into(), format!("[{} from GroupMe] {}", message.name, m).as_str()));
+                        //println!("{}", format!("[{} from GroupMe] {}", message.name, m));
+                    }
+                } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) {
+                    if let Some(m) = cs.name("message") {
+                        if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
+                            try!(vox.post(format!("{: <1$}", m, self.factionsyncer.group.members.len()),
+                            //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
+                            Some(vec![groupme::Mentions { data: vec![("8856552".to_string(), 0, 1), ("20298305".to_string(), 1, 1), ("19834407".to_string(), 2, 1), ("12949596".to_string(), 3, 1), ("13094442".to_string(), 4, 1)] }.into()])
+                            //Some(vec![self.factionsyncer.group.mention_everyone()])
+                            ));
+                        }
+                    }
+                }
+            }
             let hour = chrono::Local::now().hour();
             if 2 < hour && hour < 7 { return Ok(()); }
             if i % 5 == 0 {
@@ -270,7 +305,7 @@ pub mod conduit_to_groupme {
                         Some(ref bot) => {
                             let m = role.phrase(nll(new_member_names).as_str()); let len = m.len();
                             try!(bot.post(m,
-                                          None //Some(vec![groupme::Mentions { data: vec![(self.factiongroup.creator_user_id.clone(), 0, len)] }.into()])
+                                          None //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
                                           )); },
                         None => {} // TODO debug-log this stuff
                     }
@@ -282,7 +317,7 @@ pub mod conduit_to_groupme {
                 //for (kind, new_panels) in additions.into_iter() {
                 //    let role = BotRole::Panel(kind);
                 //    match self.bots.get(&role) {
-                //        Some(ref bot) => for panel in new_panels.into_iter() { try!(bot.post(format!("{: <1$}", role.phrase(panel.title.as_str()), self.factiongroup.members.len()), Some(vec![self.factiongroup.mention_everyone()]))); }, // TODO do more stuff with this
+                //        Some(ref bot) => for panel in new_panels.into_iter() { try!(bot.post(format!("{: <1$}", role.phrase(panel.title.as_str()), self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()]))); }, // TODO do more stuff with this
                 //        None => {} // TODO debug-log this stuff
                 //    }
                 //}
@@ -303,7 +338,7 @@ pub mod conduit_to_groupme {
     }
 }
 
-pub mod conduit_to_hvz {
+pub mod conduit_to_hvz { // this now serves no purpose
     use hvz;
     use groupme_syncer;
     use groupme;
@@ -320,33 +355,6 @@ pub mod conduit_to_hvz {
     }
     impl periodic::Periodic for ConduitGroupmeToHvZ {
         fn tick(&mut self, _: usize) -> ResultB<()> {
-            lazy_static!{
-                static ref MESSAGE_TO_HVZCHAT_RE: regex::Regex = regex::Regex::new(r"^@(?P<faction>(?:[Gg]en(?:eral)?|[Aa]ll)|(?:[Hh]um(?:an)?)|(?:[Zz]omb(?:ie)?))(?: |-)?(?:[Cc]hat)? (?P<message>.+)").unwrap();
-                static ref MESSAGE_TO_EVERYONE_RE: regex::Regex = regex::Regex::new(r"^@[Ee]veryone (?P<message>.+)").unwrap();
-                static ref MESSAGE_TO_ADMINS_RE: regex::Regex = regex::Regex::new(r"^@[Aa]dmins (?P<message>.+)").unwrap();
-            }
-            let new_messages = try!(self.syncer.update_messages());
-            println!("new_messages.len() = {:?}", new_messages.len());
-            for message in new_messages {
-                if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
-                    if let Some(m) = cs.name("message") {
-                        try!(self.syncer.group.post(format!("{: <1$}", m, self.syncer.group.members.len()), Some(vec![self.syncer.group.mention_everyone()])));
-                    }
-                } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
-                    if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
-                        try!(self.scraper.post_chat(f.into(), format!("[{} from GroupMe] {}", message.name, m).as_str()));
-                        //println!("{}", format!("[{} from GroupMe] {}", message.name, m));
-                    }
-                } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) {
-                    if let Some(m) = cs.name("message") {
-                        try!(self.syncer.group.post(format!("{: <1$}", m, self.syncer.group.members.len()),
-                        //Some(vec![groupme::Mentions { data: vec![(self.factiongroup.creator_user_id.clone(), 0, len)] }.into()])
-                        Some(vec![groupme::Mentions { data: vec![("8856552".to_string(), 0, 1), ("20298305".to_string(), 1, 1), ("19834407".to_string(), 2, 1), ("12949596".to_string(), 3, 1), ("13094442".to_string(), 4, 1)] }.into()])
-                        //Some(vec![self.syncer.group.mention_everyone()])
-                        ));
-                    }
-                }
-            }
             Ok(())
         }
     }
