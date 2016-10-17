@@ -267,7 +267,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
                     if let Some(m) = cs.name("message") {
                         if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
-                            try!(vox.post(format!("{: <1$}", m, self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()])));
+                            try!(vox.post(format!("[{}] {: <2$}", message.name, m, self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()])));
                         }
                     }
                 } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
@@ -283,6 +283,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             Some(vec![groupme::Mentions { data: vec![("8856552".to_string(), 0, 1), ("20298305".to_string(), 1, 1), ("19834407".to_string(), 2, 1), ("12949596".to_string(), 3, 1), ("13094442".to_string(), 4, 1)] }.into()])
                             //Some(vec![self.factionsyncer.group.mention_everyone()])
                             ));
+                            try!(self.hvz.scraper.post_chat(hvz::Faction::Human, format!("@admins {} from GroupMe says, {:?}.", message.name, m).as_str()));
                         }
                     }
                 }
