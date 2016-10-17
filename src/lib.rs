@@ -287,13 +287,15 @@ pub mod conduit_to_groupme {
                 //    }
                 //}
             }
-            let (additions, deletions) = try!(self.hvz.update_chatboard());
-            for (faction, new_messages) in additions.into_iter() {
-                if faction == hvz::Faction::General && 7 < hour && hour < 23 { continue; }
-                let role = BotRole::Chat(faction);
-                match self.bots.get(&role) {
-                    Some(ref bot) => for message in new_messages.into_iter() { try!(bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)); },
-                    None => {} // TODO debug-log this stuff
+            if i % 2 == 1 {
+                let (additions, deletions) = try!(self.hvz.update_chatboard());
+                for (faction, new_messages) in additions.into_iter() {
+                    if faction == hvz::Faction::General && 7 < hour && hour < 23 { continue; }
+                    let role = BotRole::Chat(faction);
+                    match self.bots.get(&role) {
+                        Some(ref bot) => for message in new_messages.into_iter() { try!(bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)); },
+                        None => {} // TODO debug-log this stuff
+                    }
                 }
             }
             Ok(())
