@@ -323,6 +323,7 @@ pub mod conduit_to_hvz {
             lazy_static!{
                 static ref MESSAGE_TO_HVZCHAT_RE: regex::Regex = regex::Regex::new(r"^@(?P<faction>(?:[Gg]en(?:eral)?|[Aa]ll)|(?:[Hh]um(?:an)?)|(?:[Zz]omb(?:ie)?))(?: |-)?(?:[Cc]hat)? (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_EVERYONE_RE: regex::Regex = regex::Regex::new(r"^@[Ee]veryone (?P<message>.+)").unwrap();
+                static ref MESSAGE_TO_ADMINS_RE: regex::Regex = regex::Regex::new(r"^@[Aa]dmins (?P<message>.+)").unwrap();
             }
             let new_messages = try!(self.syncer.update_messages());
             println!("new_messages.len() = {:?}", new_messages.len());
@@ -335,6 +336,14 @@ pub mod conduit_to_hvz {
                     if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
                         try!(self.scraper.post_chat(f.into(), format!("[{} from GroupMe] {}", message.name, m).as_str()));
                         //println!("{}", format!("[{} from GroupMe] {}", message.name, m));
+                    }
+                } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) {
+                    if let Some(m) = cs.name("message") {
+                        try!(self.syncer.group.post(format!("{: <1$}", m, self.syncer.group.members.len()),
+                        //Some(vec![groupme::Mentions { data: vec![(self.factiongroup.creator_user_id.clone(), 0, len)] }.into()])
+                        Some(vec![groupme::Mentions { data: vec![("8856552".to_string(), 0, 1), ("20298305".to_string(), 1, 1), ("19834407".to_string(), 2, 1), ("12949596".to_string(), 3, 1), ("13094442".to_string(), 4, 1)] }.into()])
+                        //Some(vec![self.syncer.group.mention_everyone()])
+                        ));
                     }
                 }
             }
