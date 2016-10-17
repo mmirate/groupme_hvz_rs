@@ -95,13 +95,13 @@ impl HvZScraper {
     }
     fn slurp<R: std::io::Read>(mut r: R) -> std::io::Result<String> { let mut buffer = Vec::<u8>::new(); r.read_to_end(&mut buffer).and_then(|_| Ok(String::from_utf8_lossy(&buffer).to_string())) }
     //fn succeed(res: hyper::client::response::Response) -> hyper::client::response::Response { assert!(res.status.is_success()); res }
-    fn do_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, canfail: bool) -> hyper::Result<hyper::client::response::Response> {
+    fn do_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, canfail: bool) -> ResultB<hyper::client::response::Response> {
         let r = self.read_cookies(rb).send();
         //println!("response: {:?}", r);
-        r.map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { Ok(res) } else { println!("NON-SLURP FAILED: {:?}", res); Err(hyper::error::Error::Method) })
+        r.map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { Ok(res) } else { println!("NON-SLURP FAILED: {:?}", res); Err(hyper::error::Error::Method) }).map_err(From::from)
     }
-    fn do_and_slurp_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, read: bool, canfail: bool) -> hyper::Result<String> {
-        self.read_cookies(rb).send().map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { if read { Self::slurp(res).map_err(hyper::error::Error::Io) } else { Ok(String::new()) } } else { println!("SLURP FAILED: {:?}", res); Err(hyper::error::Error::Method) })
+    fn do_and_slurp_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, read: bool, canfail: bool) -> ResultB<String> {
+        self.read_cookies(rb).send().map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { if read { Self::slurp(res).map_err(hyper::error::Error::Io) } else { Ok(String::new()) } } else { println!("SLURP FAILED: {:?}", res); Err(hyper::error::Error::Method) }).map_err(From::from)
     }
     fn _redirect_url(res: &hyper::client::response::Response) -> Option<url::Url> {
         match res.headers.get::<hyper::header::Location>() { Some(&hyper::header::Location(ref loc)) => { res.url.join(loc).ok() }, _ => None }
@@ -115,7 +115,7 @@ impl HvZScraper {
         let u = url::Url::parse("https://login.gatech.edu/").unwrap().join(doc.select(&form_selector).next().unwrap().value().attr("action").unwrap()).unwrap();/*"https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules"*/
         (querystring.finish(), u)
     }
-    fn _login(&mut self) -> hyper::error::Result<hyper::client::Client> {
+    fn _login(&mut self) -> ResultB<hyper::client::Client> {
         let mut client = hyper::client::Client::new();
         if self.last_login.elapsed() < std::time::Duration::from_secs(600) { return Ok(client); }
         let res = self.do_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true);
@@ -127,23 +127,23 @@ impl HvZScraper {
                 if let Some(loc) = Self::_redirect_url(&res) { if loc.host_str().unwrap_or("") == "hvz.gatech.edu" { break; } }
                 let (body, u) = Self::_fill_login_form(scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true, true)).as_str()));
                 res = try!(self.do_with_cookies(client.post(u.as_str()).body(&body).header(form_type()), true));
-                if !(res.status.is_success() || res.status.is_redirection()) { return Err(hyper::error::Error::Method); }
+                if !(res.status.is_success() || res.status.is_redirection()) { try!(Err(hyper::error::Error::Method)); }
             }
             while let Some(loc) = Self::_redirect_url(&res)  {
                 res = try!(self.do_with_cookies(client.get(loc/*res.url.as_str()*/), true));
-                if !(res.status.is_success() || res.status.is_redirection()) { return Err(hyper::error::Error::Method); }
+                if !(res.status.is_success() || res.status.is_redirection()) { try!(Err(hyper::error::Error::Method)); }
             }
         }
         //println!("{:?}", &self.cookiejar);
         if !(try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/rules/"), true)).url.host_str().unwrap_or("") == "hvz.gatech.edu") { // login credentials were correct?
-            return Err(hyper::error::Error::Method);
+            try!(Err(hyper::error::Error::Method));
         }
         client.set_redirect_policy(hyper::client::RedirectPolicy::FollowAll);
         self.last_login = std::time::Instant::now();
         Ok(client)
     }
     #[inline] pub fn login(&mut self) -> ResultB<hyper::client::Client> {
-        Ok(try!(self._login()))
+        self._login()
         //let /*mut*/ client = self._login();
         //let mut i = 0;
         //while client.is_err() && i < 10 {
@@ -195,7 +195,7 @@ impl HvZScraper {
     }
     pub fn post_chat(&mut self, recipient: Faction, text: &str) -> ResultB<hyper::client::response::Response> {
         let client = try!(self.login());
-        Ok(try!(self.do_with_cookies(client.post("https://hvz.gatech.edu/chat/_post.php").body(&url::form_urlencoded::Serializer::new(String::new()).append_pair("aud", &format!("{:?}", recipient)).append_pair("content", text).finish()).header(form_type()), false)))
+        self.do_with_cookies(client.post("https://hvz.gatech.edu/chat/_post.php").body(&url::form_urlencoded::Serializer::new(String::new()).append_pair("aud", &format!("{:?}", recipient)).append_pair("content", text).finish()).header(form_type()), false).map_err(From::from)
     }
 }
 
