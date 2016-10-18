@@ -113,6 +113,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     use rand::Rng;
     //use rustc_serialize::json::ToJson;
     use std::convert::Into;
+    use std::iter::FromIterator;
     use error::*;
     extern crate regex;
 
@@ -260,14 +261,26 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 static ref MESSAGE_TO_HVZCHAT_RE: regex::Regex = regex::Regex::new(r"^@(?P<faction>(?:[Gg]en(?:eral)?|[Aa]ll)|(?:[Hh]um(?:an)?)|(?:[Zz]omb(?:ie)?))(?: |-)?(?:[Cc]hat)? (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_EVERYONE_RE: regex::Regex = regex::Regex::new(r"^@[Ee]veryone (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_ADMINS_RE: regex::Regex = regex::Regex::new(r"^@[Aa]dmins (?P<message>.+)").unwrap();
+                static ref ALLOWED_MESSAGEBLASTERS: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::from_iter(vec!["6852241" /* Kevin F */,
+"13808540" /* Marco Kelner */,
+"16614279" /* Anthony Stranko */,
+"13153662" /* Josh Netter */,
+"21806948" /* Milo Mirate */,
+"21815306" /* Sriram Ganesan */,
+"22267657" /* Scott Nealon */,
+"17031287" /* Matt Zilvetti */,
+"13883710" /* Gabriela Lago */,
+"13830361" /* Luke Schussler */]);
             }
             let new_messages = try!(self.factionsyncer.update_messages());
             println!("new_messages.len() = {:?}", new_messages.len());
             for message in new_messages {
                 if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
-                    if let Some(m) = cs.name("message") {
-                        if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
-                            try!(vox.post(format!("[{}] {: <2$}", message.name, m, self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()])));
+                    if ALLOWED_MESSAGEBLASTERS.contains(message.user_id.as_str()) {
+                        if let Some(m) = cs.name("message") {
+                            if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
+                                try!(vox.post(format!("[{}] {: <2$}", message.name, m, self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone_except(&message.user_id.as_str())])));
+                            }
                         }
                     }
                 } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {

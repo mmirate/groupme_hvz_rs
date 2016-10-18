@@ -163,6 +163,9 @@ impl Group {
     pub fn mention_everyone(&self) -> Json {
         Mentions { data: self.members.iter().enumerate().map(|(i,m)| (m.user_id.clone(), i, 1)).collect() }.into()
     }
+    pub fn mention_everyone_except(&self, sender_uid: &str) -> Json {
+        Mentions { data: self.members.iter().filter(|m| m.user_id != sender_uid).enumerate().map(|(i,m)| (m.user_id.clone(), i, 1)).collect() }.into()
+    }
     pub fn post_to_everyone(&self, text: String, attachments: Option<Vec<Json>>) -> ResultB<()> {
         let mut a = vec![self.mention_everyone()];
         if let Some(ref attachments) = attachments { a.extend(attachments.iter().cloned()); }
