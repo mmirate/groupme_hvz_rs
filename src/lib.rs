@@ -133,7 +133,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         }
     }
 
-    #[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)] enum BotRole { VoxPopuli, Chat(hvz::Faction), Killboard(hvz::Faction), Panel(hvz::PanelKind) }
+    #[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)] enum BotRole { VoxPopuli, Chat(hvz::Faction), Killboard(hvz::Faction)/*, Panel(hvz::PanelKind)*/ }
     impl BotRole {
         fn nickname(&self) -> String {
             match self {
@@ -142,8 +142,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 &BotRole::Killboard(hvz::Faction::Zombie) => "The Messenger".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Fleet Sgt. Ho".to_string(),
                 &BotRole::Killboard(_) => "ERROR: UNKNOWN BOT".to_string(),
-                &BotRole::Panel(hvz::PanelKind::Mission) => "John from IT".to_string(),
-                &BotRole::Panel(hvz::PanelKind::Announcement) => "Midnight Lantern".to_string(),
+                //&BotRole::Panel(hvz::PanelKind::Mission) => "John from IT".to_string(),
+                //&BotRole::Panel(hvz::PanelKind::Announcement) => "Midnight Lantern".to_string(),
             }
         }
         fn avatar_url(&self) -> Option<String> {
@@ -156,8 +156,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 &BotRole::Killboard(hvz::Faction::Zombie) => "https://i.groupme.com/800x800.png.9ce096915aec40f5926ba8a8c392fa8f".to_string().into(),
                 &BotRole::Killboard(hvz::Faction::Human) => "https://i.groupme.com/1280x688.jpeg.70371d1476624df0b6586d8e6d72a946".to_string().into(),
                 &BotRole::Killboard(_) => None,
-                &BotRole::Panel(hvz::PanelKind::Mission) => "https://i.groupme.com/250x332.jpeg.bd6de69e29b5462085e685a595be7864".to_string().into(),
-                &BotRole::Panel(hvz::PanelKind::Announcement) => None,
+                //&BotRole::Panel(hvz::PanelKind::Mission) => "https://i.groupme.com/250x332.jpeg.bd6de69e29b5462085e685a595be7864".to_string().into(),
+                //&BotRole::Panel(hvz::PanelKind::Announcement) => None,
             }
         }
         fn watdo(&self) -> String {
@@ -167,8 +167,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within about a minute.".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Whenever someone signs up, I'll report it here.".to_string(),
                 &BotRole::Killboard(_) => "ERROR: UNKNOWN BOT".to_string(),
-                &BotRole::Panel(hvz::PanelKind::Mission) => "If a mission arises, I'll contact you.".to_string(),
-                &BotRole::Panel(hvz::PanelKind::Announcement) => "I announce the nightly announcements. #DeptOfRedundancyDept".to_string(),
+                //&BotRole::Panel(hvz::PanelKind::Mission) => "If a mission arises, I'll contact you.".to_string(),
+                //&BotRole::Panel(hvz::PanelKind::Announcement) => "I announce the nightly announcements. #DeptOfRedundancyDept".to_string(),
             }
         }
         fn phrase(&self, param: &str) -> String {
@@ -186,8 +186,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 &BotRole::Killboard(hvz::Faction::Zombie) => messages!["Verdammt! We lost {}. I hope it was worth it.", "(－‸ლ) {} died. Come on; we can do better than this!", "Well, I'll be. Looks like {} bit the dust.", "Well, drat. I think the zombies got {}. I hope they died with dignity.", "Well, I declare. Seems that {} kicked the bucket.", "Hunh. I guess {} turned. A grim inevitability.", "Are you kidding me? Killboard says they've nommed {}! Fight harder!", "Argh. {} passed on to the undeath."],
                 &BotRole::Killboard(hvz::Faction::Human) => messages!["A warm welcome goes out to {}.", "New blood! Err, I mean, signups. Namely, {}.", "Humanity has expanded to include {}.", "Well, it seems that {} signed up for HvZ. Good luck to them."],
                 &BotRole::Killboard(_) => messages!["{:?}"],
-                &BotRole::Panel(hvz::PanelKind::Mission) => messages!["New mission is up! {:?}. Good luck, everyone. https://hvz.gatech.edu/missions/", "Attention! A new mission has been posted! {:?}. Let's do this! https://hvz.gatech.edu/missions/", "Mission details have been posted for {:?}. Good luck, godspeed and hail victory! https://hvz.gatech.edu/missions/"],
-                &BotRole::Panel(hvz::PanelKind::Announcement) => messages!["The {:?} announcements are posted. https://hvz.gatech.edu/announcements/", "The admins have posted a {:?} announcement. https://hvz.gatech.edu/announcements/", "The {:?} announcement is up! https://hvz.gatech.edu/announcements/"],
+                //&BotRole::Panel(hvz::PanelKind::Mission) => messages!["New mission is up! {:?}. Good luck, everyone. https://hvz.gatech.edu/missions/", "Attention! A new mission has been posted! {:?}. Let's do this! https://hvz.gatech.edu/missions/", "Mission details have been posted for {:?}. Good luck, godspeed and hail victory! https://hvz.gatech.edu/missions/"],
+                //&BotRole::Panel(hvz::PanelKind::Announcement) => messages!["The {:?} announcements are posted. https://hvz.gatech.edu/announcements/", "The admins have posted a {:?} announcement. https://hvz.gatech.edu/announcements/", "The {:?} announcement is up! https://hvz.gatech.edu/announcements/"],
             };
             (*rand::thread_rng().choose(formats).unwrap())(param)
         }
@@ -205,7 +205,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     impl ConduitHvZToGroupme {
         pub fn new(factiongroup: groupme::Group, cncgroup: groupme::Group) -> Self {
             let mut bots = std::collections::BTreeMap::new();
-            for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie), BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)].into_iter() {
+            for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie), /*BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)*/].into_iter() {
                 bots.insert(role, groupme::Bot::upsert(&factiongroup, role.nickname(), role.avatar_url(), None).unwrap());
             }
             ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(), bots: bots }
@@ -326,16 +326,16 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 }
             }
             if (15 - ((minute as i32)%30)).abs() >= 12 && i % 4 == 0 /*i % 6 == 1*/ {
-                //let _ = self.hvz.update_panelboard();
-                let (additions, deletions) = try!(self.hvz.update_panelboard());
-                for (kind, new_panels) in additions.into_iter() {
-                    if kind == hvz::PanelKind::Announcement { continue; }
-                    let role = BotRole::Panel(kind);
-                    match self.bots.get(&role) {
-                        Some(ref bot) => for panel in new_panels.into_iter() { try!(bot.post(format!("{: <1$}", role.phrase(panel.title.as_str()), self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()]))); }, // TODO do more stuff with this
-                        None => {} // TODO debug-log this stuff
-                    }
-                }
+                let _ = self.hvz.update_panelboard();
+                //let (additions, deletions) = try!(self.hvz.update_panelboard());
+                //for (kind, new_panels) in additions.into_iter() {
+                //    if kind == hvz::PanelKind::Announcement { continue; }
+                //    let role = BotRole::Panel(kind);
+                //    match self.bots.get(&role) {
+                //        Some(ref bot) => for panel in new_panels.into_iter() { try!(bot.post(format!("{: <1$}", role.phrase(panel.title.as_str()), self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()]))); }, // TODO do more stuff with this
+                //        None => {} // TODO debug-log this stuff
+                //    }
+                //}
             }
             if i % 2 == 1 {
                 let (additions, deletions) = try!(self.hvz.update_chatboard());
