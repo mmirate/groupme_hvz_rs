@@ -296,12 +296,12 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             Some(vec![groupme::Mentions { data: vec![("8856552".to_string(), 0, 1), ("20298305".to_string(), 1, 1), ("19834407".to_string(), 2, 1), ("12949596".to_string(), 3, 1), ("13094442".to_string(), 4, 1)] }.into()])
                             //Some(vec![self.factionsyncer.group.mention_everyone()])
                             ));
-                            try!(self.hvz.scraper.post_chat(hvz::Faction::Human, format!("@admins {} from GroupMe says, {:?}.", message.name, m).as_str()));
+                            //try!(self.hvz.scraper.post_chat(hvz::Faction::Human, format!("@admins {} from GroupMe says, {:?}.", message.name, m).as_str()));
                         }
                     }
                 }
             }
-            let hour = chrono::Local::now().hour();
+            let (hour, minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
             if 2 < hour && hour < 7 { return Ok(()); }
             if i % 5 == 0 {
                 let (additions, deletions) = try!(self.hvz.update_killboard());
@@ -325,7 +325,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     }
                 }
             }
-            if i % 6 == 1 {
+            if (15 - ((minute as i32)%30)).abs() >= 12 && i % 4 == 0 /*i % 6 == 1*/ {
                 //let _ = self.hvz.update_panelboard();
                 let (additions, deletions) = try!(self.hvz.update_panelboard());
                 for (kind, new_panels) in additions.into_iter() {
