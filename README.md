@@ -1,4 +1,4 @@
-# Groupme ↔ GA Tech HvZ
+# GroupMe ↔ GA Tech HvZ
 
 ## Background
 
@@ -33,7 +33,7 @@ Near the top of the file `src/hvz/mod.rs`, there are storage locations where the
 
 ### 2. GroupMe API key
 
-Same as before, in `src/groupme/api.rs`.
+Same as previous, in `src/groupme/api.rs`. The API key can be obtained by logging in at https://dev.groupme.com.
 
 ### 3. GroupMe groups
 
@@ -52,13 +52,8 @@ To check that the program is functioning on a basic level, type the exact messag
 ## Limitations
 
 - Polls the server every few seconds. This is bad for both sides' network performance and even worse for clientside power consumption. The original website frontend itself is no different, however.
-- Since it uses a non-POE event loop, it cannot interact with you by using POE's IRCd; this is half bug, half feature: it's a bug in that being able to use Irssi would yield a lot of nice things for free, but it's a feature in that being strictly limited to one user prevents anyone from using this in a manner which might violate Georgia Tech IT regulations against storing SSO credentials.
-	- (Note, this program does *not* request or store the primary key for the Georgia Tech SSO database entry that corresponds to you. Storing other people's credentials in-memory on the other hand... where you could dump them to disk as easily as the logs... if that isn't against policy then I would be very, very surprised.)
-
-## Bugs/Limitations
-
-- Error handling is primitive (`try!(x :: Result<T, Box<Error>>)` at best; `unwrap()` at worst). Most errors will print an error and halt the current poll or send; non-transient errors (e.g. network down) will additionally spam Heroku's logs with highly-cryptic messages; and if you're emulating Heroku locally then you should take care that the program is restarted upon crashing.
-- Credentials are all baked into the program. TODO: factor these out into command-line parameters (which can be specified in the `Procfile`).
-- Obtaining the Group-IDs to give this program, is nigh-impossible without using the GroupMe API. TODO: automatically discover/upsert the command&control Group.
 - This program lacks the feature of laying dormant until activated via the command&control channel; impact is that you must be at a full-fledged computer in order to activate this program in the wake of a previous program-operator's ... err, faction-switch.
+- Error handling is primitive (`try!(x :: Result<T, Box<Error>>)` at best; `unwrap()` at worst). Most errors will print an error and halt the current poll or send; non-transient errors (e.g. network down) will additionally spam Heroku's logs with highly-cryptic messages; and if you're emulating Heroku locally then you should take care that the program is restarted upon crashing.
+- Credentials are all compiled into the executable. TODO: factor these out into command-line parameters (which can be specified in the `Procfile`).
+- Obtaining the Group-IDs to give this program, is nigh-impossible without using the GroupMe API. TODO: automatically discover/upsert the command&control Group.
 
