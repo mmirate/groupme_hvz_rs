@@ -53,7 +53,7 @@ To check that the program is functioning on a basic level, type the exact messag
 
 - Polls the server every few seconds. This is bad for both sides' network performance and even worse for clientside power consumption. The original website frontend itself is no different, however.
 - This program lacks the feature of laying dormant until activated via the command&control channel; impact is that you must be at a full-fledged computer in order to activate this program in the wake of a previous program-operator's ... err, faction-switch.
-- Error handling is primitive (`try!(x :: Result<T, Box<Error>>)` at best; `unwrap()` at worst). Most errors will print an error and halt the current poll or send; non-transient errors (e.g. network down) will additionally spam Heroku's logs with highly-cryptic messages; and if you're emulating Heroku locally then you should take care that the program is restarted upon crashing.
+- Error handling is primitive (`try!(x :: Result<T, Box<Error>>)` at best; `unwrap()` at worst). Most errors will print an error and halt the current poll or send; non-transient errors (e.g. network down) will additionally spam stderr with highly-cryptic messages and possibly abort the program; you should take care that the program is restarted upon aborting.
 - Credentials are all compiled into the executable. TODO: factor these out into command-line parameters (which can be specified in the `Procfile`).
 - Obtaining the Group-IDs to give this program, is nigh-impossible without using the GroupMe API. TODO: automatically discover/upsert the command&control Group.
 
