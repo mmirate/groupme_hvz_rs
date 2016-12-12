@@ -22,12 +22,10 @@ This is my solution to that problem.
 
 ## Dependencies
 
-- [Heroku](https://www.heroku.com) (free-tier account ... *should* work? I think?) or the ability to emulate it locally (including the Postgres database)
+- A local Postgres database
 - [Rust](https://www.rust-lang.org) (stable branch)
 
 ## How to Use
-
-Caveat lector: I have not yet verified the correctness/completeness of these instructions. "It works on my machine."
 
 ### 1. Georgia Tech SSO credentials
 
@@ -39,19 +37,17 @@ Same as before, in `src/groupme/api.rs`.
 
 ### 3. GroupMe groups
 
-In addition to the Group used by your faction, this program also uses a dedicated, personal Group in order to send/receive commands from you.
+In addition to the Group used by your faction, this program also uses a dedicated, personal Group in order to send/receive commands from you. Create such a Group, with only yourself in it.
 
-In the file `Procfile`, replace the letter-"X" by the Group ID of your personal command&control Group.
+Using another GroupMe API client, obtain the Group IDs for these two groups.
 
-### 4. Heroku
+### 4. Run
 
-Compile the program by running `cargo build --release`.
-
-Copy the program (`target/release/groupme_hvz_rs`) to the root of the repo, commit, and deploy to Heroku. Follow any other relevant instructions in Heroku's documentation.
+Export the database connection URL in `DATABASE_URL`, and run `cargo run --release -- $FACTION_GROUP_ID $CNC_GROUP_ID` to run the program. It will block the terminal whilst running.
 
 ### 5. Verify
 
-To check that the program is running, type the exact message, "`!heartbeat please`" into your command&control Group. Within 15 seconds, the bot should post a brief message on your behalf in your faction's Group.
+To check that the program is functioning on a basic level, type the exact message, "`!heartbeat please`" into your command&control Group. Within 15 seconds, the bot should post a brief message on your behalf in your faction's Group.
 
 ## Limitations
 
