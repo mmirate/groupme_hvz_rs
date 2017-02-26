@@ -43,7 +43,7 @@ use std::io::Write;
 fn unwrap<T, E: std::fmt::Debug>(x: Result<T, E>) -> T { x.unwrap() }
 
 fn actual_main() -> ! {
-    let matches = clap::App::new("HvZ/GroupMe interactor").version("0.0.1").author("Milo Mirate <mmirate@gatech.edu>")
+    let matches = clap::App::new("HvZ/GroupMe interactor").version("0.0.2").author("Milo Mirate <mmirate@gatech.edu>")
         .arg(clap::Arg::with_name("FACTION_GROUPID")
              .required(true)
              .index(1))
@@ -51,14 +51,14 @@ fn actual_main() -> ! {
              .required(true)
              .index(2))
         .get_matches();
-    let (factiongroup1, factiongroup2, cncgroup) = (
+    let (factiongroup1, /*factiongroup2,*/ cncgroup) = (
         unwrap(groupme::Group::get(matches.value_of("FACTION_GROUPID").unwrap())),
-        unwrap(groupme::Group::get(matches.value_of("FACTION_GROUPID").unwrap())),
+        //unwrap(groupme::Group::get(matches.value_of("FACTION_GROUPID").unwrap())),
         unwrap(groupme::Group::get(matches.value_of("CNC_GROUPID").unwrap()))
     );
     let mut conduits : Vec<Box<periodic::Periodic>> = vec![
         Box::new(conduit_to_groupme::ConduitHvZToGroupme::new(factiongroup1, cncgroup)),
-        Box::new(conduit_to_hvz::ConduitGroupmeToHvZ::new(factiongroup2))
+        //Box::new(conduit_to_hvz::ConduitGroupmeToHvZ::new(factiongroup2))
     ];
     println!("Alive!");
     let mut i = 0;

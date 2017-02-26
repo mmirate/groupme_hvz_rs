@@ -1,13 +1,13 @@
-extern crate openssl;
-pub extern crate postgres;
-extern crate rustc_serialize;
-extern crate users;
+use openssl;
+use postgres;
+use rustc_serialize;
+use users;
 use std;
 use std::fmt::Debug;
 use std::iter::Iterator;
 use std::collections::BTreeMap;
 use rustc_serialize::{Encodable,Decodable};
-use error::*;
+use errors::*;
 
 pub struct Comm<I: std::iter::Iterator<Item=T>, J: std::iter::Iterator<Item=T>, T: Clone + Eq + Ord> { l: std::iter::Peekable<I>, r: std::iter::Peekable<J>, }
 impl<I: std::iter::Iterator<Item=T>, J: std::iter::Iterator<Item=T>, T: Clone + Ord> Comm<I, J, T> {
@@ -37,22 +37,22 @@ impl<I: std::iter::Iterator<Item=T>, J: std::iter::Iterator<Item=T>, T: Clone + 
 
 fn shrink_to_fit<T>(mut v: Vec<T>) -> Vec<T> { v.shrink_to_fit(); v }
 
-pub fn comm_algorithm_memoryintensive<T>(left: Vec<T>, right: Vec<T>) -> Vec<(std::cmp::Ordering, T)> where T: Clone + Eq + Ord {
-    let mut ret: Vec<(std::cmp::Ordering, T)> = Vec::with_capacity(left.capacity()+right.capacity());
-    let (mut l, mut r) = (left.iter().peekable(), right.iter().peekable());
-    while l.peek().is_some() && r.peek().is_some() {
-        let x = l.peek().unwrap().clone();
-        let y = r.peek().unwrap().clone();
-        match x.cmp(y) {
-            o @ std::cmp::Ordering::Equal   => { ret.push((o, l.next().and(r.next()).unwrap().clone())); },
-            o @ std::cmp::Ordering::Less    => { ret.push((o, l.next()              .unwrap().clone())); },
-            o @ std::cmp::Ordering::Greater => { ret.push((o, r.next()              .unwrap().clone())); },
-        }
-    }
-    for item in l { ret.push((std::cmp::Ordering::Less, item.clone())); }
-    for item in r { ret.push((std::cmp::Ordering::Greater, item.clone())); }
-    shrink_to_fit(ret)
-}
+//pub fn comm_algorithm_memoryintensive<T>(left: Vec<T>, right: Vec<T>) -> Vec<(std::cmp::Ordering, T)> where T: Clone + Eq + Ord {
+//    let mut ret: Vec<(std::cmp::Ordering, T)> = Vec::with_capacity(left.capacity()+right.capacity());
+//    let (mut l, mut r) = (left.iter().peekable(), right.iter().peekable());
+//    while l.peek().is_some() && r.peek().is_some() {
+//        let x = l.peek().unwrap().clone();
+//        let y = r.peek().unwrap().clone();
+//        match x.cmp(y) {
+//            o @ std::cmp::Ordering::Equal   => { ret.push((o, l.next().and(r.next()).unwrap().clone())); },
+//            o @ std::cmp::Ordering::Less    => { ret.push((o, l.next()              .unwrap().clone())); },
+//            o @ std::cmp::Ordering::Greater => { ret.push((o, r.next()              .unwrap().clone())); },
+//        }
+//    }
+//    for item in l { ret.push((std::cmp::Ordering::Less, item.clone())); }
+//    for item in r { ret.push((std::cmp::Ordering::Greater, item.clone())); }
+//    shrink_to_fit(ret)
+//}
 
 fn comm_list<T>(new: Vec<T>, old: &Vec<T>, heed_deletions: bool) -> (Vec<T>, Vec<T>, Vec<T>) where T: Clone + Eq + Ord {
     let (mut all, mut additions, mut deletions) : (Vec<T>, Vec<T>, Vec<T>) = (Vec::with_capacity(new.len()), vec![], vec![]);
@@ -98,7 +98,7 @@ pub fn read(conn: &postgres::Connection, k: &str) -> postgres::Result<String> {
 }
 
 pub fn detect(conn: &postgres::Connection, k: &str) -> postgres::Result<bool> {
-    match try!(conn.query("SELECT val FROM blobs WHERE key = $1", &[&k])).iter().next() { Some(r) => Ok(true), None => Ok(false) }
+    match try!(conn.query("SELECT val FROM blobs WHERE key = $1", &[&k])).iter().next() { Some(_) => Ok(true), None => Ok(false) }
 }
 
 
@@ -120,7 +120,7 @@ pub fn write_dammit(conn: &postgres::Connection, k: &str, v: &str) -> postgres::
     Ok(i)
 }
 
-#[inline] pub fn writeback<T>(conn: &postgres::Connection, k: &str, v: T) -> ResultB<usize> where T: rustc_serialize::Encodable + rustc_serialize::Decodable + Default {
+#[inline] pub fn writeback<T>(conn: &postgres::Connection, k: &str, v: T) -> Result<usize> where T: rustc_serialize::Encodable + rustc_serialize::Decodable + Default {
     Ok(try!(write(conn, k, &try!(rustc_serialize::json::encode(&v)))) as usize)
 }
 
@@ -132,7 +132,7 @@ pub fn readout<T>(conn: &postgres::Connection, k: &str) -> T where T: rustc_seri
     //read(conn, k).map(String::as_str).and_then(rustc_serialize::json::decode).unwrap_or_default()
 }
 
-pub fn update_list<T>(conn: &postgres::Connection, k: &str, new: Vec<T>, old: &Vec<T>, heed_deletions: bool) -> ResultB<(Vec<T>, Vec<T>, Vec<T>)> where T: Clone + Decodable + Encodable + Eq + Ord + Debug {
+pub fn update_list<T>(conn: &postgres::Connection, k: &str, new: Vec<T>, old: &Vec<T>, heed_deletions: bool) -> Result<(Vec<T>, Vec<T>, Vec<T>)> where T: Clone + Decodable + Encodable + Eq + Ord + Debug {
     let (all, additions, deletions) = comm_list(new, old, heed_deletions);
     if !(additions.is_empty() && deletions.is_empty()) {
         let i = try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
@@ -144,7 +144,7 @@ pub fn update_list<T>(conn: &postgres::Connection, k: &str, new: Vec<T>, old: &V
     Ok((all, additions, deletions))
 }
 
-pub fn update_map<K, T>(conn: &postgres::Connection, k: &str, new: BTreeMap<K, Vec<T>>, old: &BTreeMap<K, Vec<T>>, heed_deletions: bool) -> ResultB<(BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>)> where T: Clone + rustc_serialize::Decodable + rustc_serialize::Encodable + Eq + Ord + Debug, K: Ord + Clone + Decodable + Encodable + Debug {
+pub fn update_map<K, T>(conn: &postgres::Connection, k: &str, new: BTreeMap<K, Vec<T>>, old: &BTreeMap<K, Vec<T>>, heed_deletions: bool) -> Result<(BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>)> where T: Clone + rustc_serialize::Decodable + rustc_serialize::Encodable + Eq + Ord + Debug, K: Ord + Clone + Decodable + Encodable + Debug {
     let (all, additions, deletions) = comm_map(new, old, heed_deletions);
     if !(additions.is_empty() && deletions.is_empty()) {
         let i = try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));

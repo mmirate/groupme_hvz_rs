@@ -1,6 +1,6 @@
 [package]
 name = "groupme_hvz_rs"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Milo Mirate <mmirate@gmx.com>"]
 
 [dependencies]
@@ -8,14 +8,18 @@ chrono = { version = "^0.2", features = ["rustc-serialize"] }
 clap = "^2"
 cookie = "^0.3.0"
 hyper = "^0.9.10"
+image = "^0.10.3"
 lazy_static = "^0.2.1"
-multipart = "^0.7.0"
+multipart = { version = "^0.9.0", features = ["client", "hyper"], default-features = false }
 openssl = "^0.7.14"
 postgres = { version = "^0.11.10", features = ["openssl"] }
+error-chain = "^0.9"
 rand = "^0.3"
 regex = "^0.1"
 rustc-serialize = "^0.3.19"
 scraper = "^0.4.0"
+sdl2 = "^0.25"
+sdl2_ttf = "^0.25"
 static_slice = "^0.0.2"
 time = "^0.1"
 users = "^0.5.0"
