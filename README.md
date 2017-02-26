@@ -27,33 +27,32 @@ This is my solution to that problem.
 
 ## How to Use
 
-### 1. Georgia Tech SSO credentials
+### 1. GroupMe API key
 
-Near the top of the file `src/hvz/mod.rs`, there are storage locations where these credentials are compiled into the program. Substitute these credentials with your own.
+Near the top of the file `src/groupme/api.rs`, there is a storage location where the GroupMe API key is compiled into the program. Substitute this key with your own. Your API key can be obtained by logging in at https://dev.groupme.com.
 
-### 2. GroupMe API key
-
-Same as previous, in `src/groupme/api.rs`. The API key can be obtained by logging in at https://dev.groupme.com.
-
-### 3. GroupMe groups
+### 2. GroupMe groups
 
 In addition to the Group used by your faction, this program also uses a dedicated, personal Group in order to send/receive commands from you. Create such a Group, with only yourself in it.
 
-Using another GroupMe API client, obtain the Group IDs for these two groups.
+Run `GROUPME_API_KEY=$GROUPME_API_KEY cargo run --bin find_group` in a terminal. It will output a list of all Groups you're in, and their Group IDs. Find these two particular Groups in this list, and call their Group IDs `$FACTION_GROUP_ID` and `$CNC_GROUP_ID`, respectively.
+
+### 3. Georgia Tech SSO credentials
+
+Find these credentials and call them `$GATECH_USERNAME` and `$GATECH_PASSWORD`.
 
 ### 4. Run
 
-Export the database connection URL in `DATABASE_URL`, and run `cargo run --release -- $FACTION_GROUP_ID $CNC_GROUP_ID` to run the program. It will block the terminal whilst running.
+Export the database connection URL in `DATABASE_URL`, and run `cargo run --release -- $FACTION_GROUP_ID $CNC_GROUP_ID $GATECH_USERNAME $GATECH_PASSWORD` to run the program. It will block the terminal whilst running.
 
 ### 5. Verify
 
-To check that the program is functioning on a basic level, type the exact message, "`!heartbeat please`" into your command&control Group. Within 15 seconds, the bot should post a brief message on your behalf in your faction's Group.
+To check that the program is functioning on a basic level, type the exact message, "`!heartbeat please`" into your command&control Group. Within 15 seconds, the bot should post a brief message, on your behalf, in your faction's Group.
 
 ## Limitations
 
 - Polls the server every few seconds. This is bad for both sides' network performance and even worse for clientside power consumption. The original website frontend itself is no different, however.
 - This program lacks the feature of laying dormant until activated via the command&control channel; impact is that you must be at a full-fledged computer in order to activate this program in the wake of a previous program-operator's ... err, faction-switch.
 - Error handling is primitive (`try!(x :: Result<T, Box<Error>>)` at best; `unwrap()` at worst). Most errors will print an error and halt the current poll or send; non-transient errors (e.g. network down) will additionally spam stderr with highly-cryptic messages and possibly abort the program; you should take care that the program is restarted upon aborting.
-- Credentials are all compiled into the executable. TODO: factor these out into command-line parameters (which can be specified in the `Procfile`).
 - Obtaining the Group-IDs to give this program, is nigh-impossible without using the GroupMe API. TODO: automatically discover/upsert the command&control Group.
 

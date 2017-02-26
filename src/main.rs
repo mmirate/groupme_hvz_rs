@@ -50,26 +50,47 @@ fn actual_main() -> ! {
         .arg(clap::Arg::with_name("CNC_GROUPID")
              .required(true)
              .index(2))
+        .arg(clap::Arg::with_name("GATECH_USERNAME")
+             .required(true)
+             .index(3))
+        .arg(clap::Arg::with_name("GATECH_PASSWORD")
+             .required(true)
+             .index(4))
         .get_matches();
     let (factiongroup1, /*factiongroup2,*/ cncgroup) = (
         unwrap(groupme::Group::get(matches.value_of("FACTION_GROUPID").unwrap())),
         //unwrap(groupme::Group::get(matches.value_of("FACTION_GROUPID").unwrap())),
         unwrap(groupme::Group::get(matches.value_of("CNC_GROUPID").unwrap()))
     );
+    let (username, password) = (matches.value_of("GATECH_USERNAME").unwrap(), matches.value_of("GATECH_PASSWORD").unwrap());
     let mut conduits : Vec<Box<periodic::Periodic>> = vec![
-        Box::new(conduit_to_groupme::ConduitHvZToGroupme::new(factiongroup1, cncgroup)),
+        Box::new(conduit_to_groupme::ConduitHvZToGroupme::new(factiongroup1, cncgroup, username.to_owned(), password.to_owned())),
         //Box::new(conduit_to_hvz::ConduitGroupmeToHvZ::new(factiongroup2))
     ];
     println!("Alive!");
     let mut i = 0;
     loop {
         for c in conduits.iter_mut() {
-            match c.tick(i) { Ok(()) => {}, Err(e) => { std::io::stderr().write(format!("\x07FATAL ERROR: {}", e).as_bytes()).unwrap(); } };
+            if let Err(ref e) = c.tick(i) {
+                std::io::stderr().write(format!("\x07ERROR: {}", e).as_bytes()).unwrap();
+                for e in e.iter().skip(1) {
+                    std::io::stderr().write(format!("caused by: {}", e).as_bytes()).unwrap();
+                }
+                if let Some(backtrace) = e.backtrace() {
+                    std::io::stderr().write(format!("backtrace: {:?}", backtrace).as_bytes()).unwrap();
+                }
+                if let Error(ErrorKind::GaTechCreds, _) = e {
+                    std::io::stderr().write(format!("Please fix this problem before continuing.").as_bytes()).unwrap();
+                    std::process::exit(1);
+                } else {
+                    std::io::stderr().write(format!("If you see this error repeatedly, please fix it.").as_bytes()).unwrap();
+                }
+            };
         }
         i += 1;
         i %= 1<<15;
         println!("==== Sleeping now. ====");
-        std::thread::sleep(std::time::Duration::new(6,0));
+        std::thread::sleep(std::time::Duration::new(8,0));
     }
 }
 

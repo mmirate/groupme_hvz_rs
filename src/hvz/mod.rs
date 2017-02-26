@@ -8,9 +8,6 @@ use std::collections::BTreeMap;
 use chrono::{TimeZone,Datelike};
 use errors::*;
 
-static USERNAME: &'static str = "jschmoe3";
-static PASSWORD: &'static str = "hunter2";
-
 //fn unwrap<T,E: std::fmt::Debug>(r: std::result::Result<T,E>) -> T { r.unwrap() }
 
 #[inline] fn form_type() -> hyper::header::ContentType { hyper::header::ContentType(hyper::mime::Mime(hyper::mime::TopLevel::Application, hyper::mime::SubLevel::WwwFormUrlEncoded,vec![(hyper::mime::Attr::Charset,hyper::mime::Value::Utf8)])) }
@@ -135,10 +132,10 @@ impl Panel { pub fn from_div<'a>(div: scraper::ElementRef<'a>) -> Result<Panel> 
 
 type MyCookieJar = BTreeMap<String, hyper::header::CookiePair>;
 
-#[derive(Clone, Debug)] pub struct HvZScraper { cookiejar: MyCookieJar, last_login: std::time::Instant, }
+#[derive(Clone, Debug)] pub struct HvZScraper { cookiejar: MyCookieJar, last_login: std::time::Instant, username: String, password: String }
 
 impl HvZScraper {
-    pub fn new() -> HvZScraper { HvZScraper { cookiejar: MyCookieJar::new(), last_login: std::time::Instant::now() - std::time::Duration::from_secs(1200)/*, client: hyper::client::Client::new()*/ } }
+    pub fn new(username: String, password: String) -> HvZScraper { HvZScraper { cookiejar: MyCookieJar::new(), last_login: std::time::Instant::now() - std::time::Duration::from_secs(1200)/*, client: hyper::client::Client::new()*/, username: username, password: password } }
     fn read_cookies<'b>(&self, rb: hyper::client::RequestBuilder<'b>) -> hyper::client::RequestBuilder<'b> {
         let h = hyper::header::Cookie(self.cookiejar.values().cloned().collect());
         //println!("Cookie: {:?}", h);
@@ -167,11 +164,11 @@ impl HvZScraper {
     fn _redirect_url(res: &hyper::client::response::Response) -> Option<url::Url> {
         match res.headers.get::<hyper::header::Location>() { Some(&hyper::header::Location(ref loc)) => { res.url.join(loc).ok() }, _ => None }
     }
-    fn _fill_login_form(doc: scraper::Html) -> Result<(String, url::Url)> {
+    fn _fill_login_form(&self, doc: scraper::Html) -> Result<(String, url::Url)> {
         let form_selector = try!(scraper::Selector::parse("form").map_err(|()| Error::from(ErrorKind::CSS)));
         let form_control_selector = try!(scraper::Selector::parse("form input[name][value]").map_err(|()| Error::from(ErrorKind::CSS)));
         let mut querystring = url::form_urlencoded::Serializer::new(String::new());
-        let querystring = querystring.append_pair("username", USERNAME).append_pair("password", PASSWORD);
+        let querystring = querystring.append_pair("username", self.username.as_str()).append_pair("password", self.password.as_str());
         for e in doc.select(&form_control_selector) {
             if !(e.value().attr("type").map(|t| ["reset", "checkbox"].contains(&t)).unwrap_or(true))
                 && !(["username", "password"].contains(e.value().attr("name").as_ref().unwrap_or(&""))) {
@@ -196,11 +193,12 @@ impl HvZScraper {
             } else {
                 try!(self.do_and_slurp_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true, false))
             };
-            let (body, u) = try!(Self::_fill_login_form(scraper::Html::parse_document(login_page.as_str())));
+            let (body, u) = try!(self._fill_login_form(scraper::Html::parse_document(login_page.as_str())));
             let mut res = try!(self.do_with_cookies(client.post(u.as_str()).body(&body).header(form_type()), true));
             while res.url.host_str().unwrap_or("") != "hvz.gatech.edu" {
                 if let Some(loc) = Self::_redirect_url(&res) { if loc.host_str().unwrap_or("") == "hvz.gatech.edu" { break; } }
-                let (body, u) = try!(Self::_fill_login_form(scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true, true)).as_str())));
+                let document = scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true, true)).as_str());
+                let (body, u) = try!(self._fill_login_form(document));
                 res = try!(self.do_with_cookies(client.post(u.as_str()).body(&body).header(form_type()), true));
                 if !(res.status.is_success() || res.status.is_redirection()) {
                     bail!(ErrorKind::GaTechCreds);
@@ -225,7 +223,7 @@ impl HvZScraper {
         Player::from_document(scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get(&format!("https://hvz.gatech.edu/profile/?gtname={}", gtname)), true, false)).as_str()))
     }
     fn shrink_to_fit<T>(mut v: Vec<T>) -> Vec<T> { v.shrink_to_fit(); v }
-    #[inline] pub fn whoami(&mut self) -> Result<Player> { self.whois(USERNAME) }
+    #[inline] pub fn whoami(&mut self) -> Result<Player> { let u = self.username.clone(); self.whois(u.as_str()) }
     #[inline] fn trace<T: std::fmt::Debug>(x: T) -> T { /* println!("{:?}", x); */ x }
     pub fn fetch_killboard(&mut self) -> Result<Killboard> {
         let client = try!(self.login());

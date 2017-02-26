@@ -81,8 +81,8 @@ pub mod hvz_syncer {
     #[derive(Debug)] pub struct HvZSyncer { pub killboard: hvz::Killboard, pub chatboard: hvz::Chatboard, pub panelboard: hvz::Panelboard, pub scraper: hvz::HvZScraper, conn: postgres::Connection, }
     pub type Changes<T> = (T, T);
     impl HvZSyncer {
-        pub fn new() -> HvZSyncer {
-            let mut me = HvZSyncer { scraper: hvz::HvZScraper::new(), conn: syncer::setup(), killboard: hvz::Killboard::new(), chatboard: hvz::Chatboard::new(), panelboard: hvz::Panelboard::new(), };
+        pub fn new(username: String, password: String) -> HvZSyncer {
+            let mut me = HvZSyncer { scraper: hvz::HvZScraper::new(username, password), conn: syncer::setup(), killboard: hvz::Killboard::new(), chatboard: hvz::Chatboard::new(), panelboard: hvz::Panelboard::new(), };
             std::mem::replace(&mut me .killboard, syncer::readout(&me.conn, "killboard"));
             std::mem::replace(&mut me .chatboard, syncer::readout(&me.conn, "chatboard"));
             std::mem::replace(&mut me.panelboard, syncer::readout(&me.conn, "panelboard"));
@@ -297,12 +297,12 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 
     pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, missions: bool, annxs: bool }
     impl ConduitHvZToGroupme {
-        pub fn new(factiongroup: groupme::Group, cncgroup: groupme::Group) -> Self {
+        pub fn new(factiongroup: groupme::Group, cncgroup: groupme::Group, username: String, password: String) -> Self {
             let mut bots = std::collections::BTreeMap::new();
             for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie), BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)].into_iter() {
                 bots.insert(role, groupme::Bot::upsert(&factiongroup, role.nickname(), role.avatar_url(), None).unwrap());
             }
-            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(), bots: bots, missions: true, annxs: false }
+            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(username, password), bots: bots, missions: true, annxs: false }
         }
         pub fn mic_check(&mut self) -> Result<()> {
             for (role, bot) in self.bots.iter() {

@@ -1,5 +1,5 @@
 use hyper;
-use multipart;
+//use multipart;
 use url;
 use time;
 use std;
@@ -298,22 +298,22 @@ impl Bots {
         //}
         response(client!().post(u.as_str()).body(&try!(rustc_serialize::json::encode(&BotsCreateEnvelope { bot: params }))).header(json_type()).send(), "response")
     }
-    pub fn post(bot_id: &str, text: String, attachments: Vec<Json>) -> Result<()> {
-        let u = Self::build_url(vec!["post"]);
-        let mut o = Json::Object(std::collections::BTreeMap::new());
-        //o.as_object_mut().unwrap().insert("message".to_string(), Json::Object(std::collections::BTreeMap::new()));
-        {
-            let ref mut o = o;
-            let mut m = o.as_object_mut().unwrap();//.get_mut("message").unwrap().as_object_mut().unwrap();
-            //let t = time::get_time();
-            //m.insert("source_guid".to_string(), Json::String(format!("{}-{}", t.sec, t.nsec)));
-            m.insert("bot_id".to_string(), Json::String(bot_id.to_string()));
-            m.insert("text".to_string(), Json::String(text));
-            m.insert("picture_url".to_string(), Json::Null);
-            m.insert("attachments".to_string(), Json::Array(attachments));
-        }
-        empty_response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
-    }
+    //pub fn post(bot_id: &str, text: String, attachments: Vec<Json>) -> Result<()> {
+    //    let u = Self::build_url(vec!["post"]);
+    //    let mut o = Json::Object(std::collections::BTreeMap::new());
+    //    //o.as_object_mut().unwrap().insert("message".to_string(), Json::Object(std::collections::BTreeMap::new()));
+    //    {
+    //        let ref mut o = o;
+    //        let mut m = o.as_object_mut().unwrap();//.get_mut("message").unwrap().as_object_mut().unwrap();
+    //        //let t = time::get_time();
+    //        //m.insert("source_guid".to_string(), Json::String(format!("{}-{}", t.sec, t.nsec)));
+    //        m.insert("bot_id".to_string(), Json::String(bot_id.to_string()));
+    //        m.insert("text".to_string(), Json::String(text));
+    //        m.insert("picture_url".to_string(), Json::Null);
+    //        m.insert("attachments".to_string(), Json::Array(attachments));
+    //    }
+    //    empty_response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send())
+    //}
     pub fn destroy(bot_id: &str) -> Result<Json> {
         let u = Self::build_url(vec!["destroy"]);
         let mut o = Json::Object(std::collections::BTreeMap::new());
