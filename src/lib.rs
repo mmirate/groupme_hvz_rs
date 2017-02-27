@@ -313,20 +313,27 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         pub fn mic_check(&mut self) -> Result<()> {
             for (role, bot) in self.bots.iter() {
                 try!(bot.post(role.watdo(), None));
+                std::thread::sleep(std::time::Duration::from_secs(3));
             }
             {
                 let mut it = self.bots.iter().cycle();
                 if let Some((_, bot)) = it.next() {
                     try!(bot.post("Oh, and be careful. If our operator dies, so do we.".to_string(), None));
+                    std::thread::sleep(std::time::Duration::from_secs(3));
                     if let Some((_, bot)) = it.next() {
                         try!(bot.post("In such an event, our code is hosted at https://github.com/mmirate/groupme_hvz_rs .".to_string(), None));
+                        std::thread::sleep(std::time::Duration::from_secs(3));
                         if let Some((_, bot)) = it.next() {
                             try!(bot.post("Just throw it up on Heroku's free plan. (https://www.heroku.com)".to_string(), None));
+                            std::thread::sleep(std::time::Duration::from_secs(3));
                         }
                     }
                 }
             }
-            try!(self.factionsyncer.group.post("One other thing. If you start your message with \"@Human Chat\" or \"@General Chat\" while I'm still alive, I'll repost it to the requested HvZ website chat.".to_string(), None));
+            try!(self.factionsyncer.group.post("Two more things. (1) If you start your message with \"@Human Chat\" or \"@General Chat\" while I'm still alive, I'll repost it to the requested HvZ website chat.".to_string(), None));
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            try!(self.factionsyncer.group.post("(2) If your message includes the two words \"I'm dead\" adjacently and in that order, but without the doublequotes and regardless of capitalization or non-doublequote punctuation ... I will kick you from the Group within a few seconds.".to_string(), None));
+            std::thread::sleep(std::time::Duration::from_secs(3));
             Ok(())
         }
         pub fn quick_mic_check(&mut self) -> Result<()> {
@@ -456,6 +463,15 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             ));
                             //try!(self.hvz.scraper.post_chat(hvz::Faction::Human, format!("@admins {} from GroupMe says, {:?}.", message.name, m).as_str()));
                         }
+                    }
+                } else if format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' }, "")).collect::<Vec<String>>().join(" ")).contains(" im dead ") {
+                    if message.user_id != self.factionsyncer.group.creator_user_id {
+                        if let Some(member) = self.factionsyncer.group.members.iter().find(|&m| m.user_id == message.user_id) {
+                            if let Err(_) = self.factionsyncer.group.remove(member.clone()) {
+                                try!(self.factionsyncer.group.post("... I guess they already got kicked?".to_owned(), None).map(|_| ()))
+                            }
+                        }
+                        try!(self.factionsyncer.group.refresh());
                     }
                 }
             }
