@@ -465,18 +465,18 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     if ALLOWED_MESSAGEBLASTERS.contains(message.user_id.as_str()) {
                         if let Some(m) = cs.name("message") {
                             if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
-                                try!(vox.post(format!("[{}] {: <2$}", message.name, m, self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone_except(&message.user_id.as_str())])));
+                                try!(vox.post(format!("[{}] {: <2$}", message.name, m.as_str(), self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone_except(&message.user_id.as_str())])));
                             }
                         }
                     }
                 } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
                     if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
-                        try!(self.hvz.scraper.post_chat(f.into(), format!("[{} from GroupMe] {}", message.name, m).as_str()));
+                        try!(self.hvz.scraper.post_chat(f.as_str().into(), format!("[{} from GroupMe] {}", message.name, m.as_str()).as_str()));
                     }
                 } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) { // TODO REDO
                     if let Some(m) = cs.name("message") {
                         if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
-                            try!(vox.post(format!("{: <1$}", m, self.factionsyncer.group.members.len()),
+                            try!(vox.post(format!("{: <1$}", m.as_str(), self.factionsyncer.group.members.len()),
                             //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
                             Some(vec![groupme::Mentions { data: vec![("8856552".to_string(), 0, 1), ("20298305".to_string(), 1, 1), ("19834407".to_string(), 2, 1), ("12949596".to_string(), 3, 1), ("13094442".to_string(), 4, 1)] }.into()])
                             //Some(vec![self.factionsyncer.group.mention_everyone()])
