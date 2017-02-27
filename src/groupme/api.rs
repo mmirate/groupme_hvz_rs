@@ -8,9 +8,12 @@ use hyper::client::Client;
 use rustc_serialize;
 use rustc_serialize::{/*Encodable,*/Decodable};
 use rustc_serialize::json::{Json,ToJson};
+lazy_static!{
+    static ref API_KEY: String = std::env::var("GROUPME_API_KEY").expect("GroupMe API key not supplied in environment.");
+}
 static API_URL: &'static str = "https://api.groupme.com/v3";
 static IMAGE_API_URL: &'static str = "https://image.groupme.com"; // I don't happen to need the Image API here
-static API_KEY: &'static str = "hunter2";
+//static API_KEY: &'static str = "hunter2";
 use errors::*;
 
 macro_rules! client {
@@ -35,7 +38,7 @@ fn response(r: hyper::Result<hyper::client::response::Response>, key: &'static s
 } // key="response" -> key="payload" for Image API. It's short-bus-special like that.
 
 #[inline] fn url_extend<I>(mut u: url::Url, segments: I) -> url::Url where I: IntoIterator, I::Item: AsRef<str> { u.path_segments_mut().unwrap().extend(segments); u }
-#[inline] fn url_keyify(mut u: url::Url) -> url::Url { u.query_pairs_mut().clear().append_pair("token", API_KEY); u }
+#[inline] fn url_keyify(mut u: url::Url) -> url::Url { u.query_pairs_mut().clear().append_pair("token", &API_KEY); u }
 
 pub trait Endpoint {
     #[inline] fn base_url() -> url::Url;

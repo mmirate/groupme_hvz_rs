@@ -34,7 +34,8 @@ fn solid_to_luma(surface: &mut sdl2::surface::Surface) -> Result<image::ImageBuf
     let (p, w, h) = (surface.pitch(), surface.width(), surface.height());
     let mut luma_buffer = try!(surface.without_lock_mut().ok_or(ErrorKind::RLE)).to_owned();
     for p in luma_buffer.iter_mut() {
-        *p = !p.wrapping_sub(1);
+        //*p = !p.wrapping_sub(1); // 0 => BG => 0; 1 => FG => 255
+        *p = p.wrapping_sub(1); // 0 => BG => 255; 1 => FG => 0
     }
     Ok(image::imageops::crop(&mut image::ImageBuffer::from_raw(p, h, luma_buffer).unwrap(), 0, 0, w, h).to_image())
 }

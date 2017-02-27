@@ -2,6 +2,7 @@ extern crate rustc_serialize;
 extern crate clap;
 extern crate groupme_hvz_rs;
 use groupme_hvz_rs::*;
+use groupme_hvz_rs::errors::*;
 
 #[derive(RustcEncodable, RustcDecodable)]
 struct MyData {
@@ -40,7 +41,7 @@ fn trivial_main() {
 //use std;
 use std::io::Write;
 
-fn unwrap<T, E: std::fmt::Debug>(x: Result<T, E>) -> T { x.unwrap() }
+fn unwrap<T, E: std::fmt::Debug>(x: std::result::Result<T, E>) -> T { x.unwrap() }
 
 fn actual_main() -> ! {
     let matches = clap::App::new("HvZ/GroupMe interactor").version("0.0.2").author("Milo Mirate <mmirate@gatech.edu>")
@@ -79,7 +80,7 @@ fn actual_main() -> ! {
                 if let Some(backtrace) = e.backtrace() {
                     std::io::stderr().write(format!("backtrace: {:?}", backtrace).as_bytes()).unwrap();
                 }
-                if let Error(ErrorKind::GaTechCreds, _) = e {
+                if let &Error(ErrorKind::GaTechCreds, _) = e {
                     std::io::stderr().write(format!("Please fix this problem before continuing.").as_bytes()).unwrap();
                     std::process::exit(1);
                 } else {

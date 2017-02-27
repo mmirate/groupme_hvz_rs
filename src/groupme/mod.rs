@@ -169,7 +169,6 @@ impl Group {
         let mut page = 1;
         let mut groups = Vec::<Self>::new();
         let j = try!(self::api::Groups::index(Some(page), Some(500), None));
-        //println!("{:?}", j);
         let mut next_groups = unwrap(Vec::<Self>::decode(&mut rustc_serialize::json::Decoder::new(j)));
         while next_groups.len() > 0 {
             groups.extend(next_groups.into_iter());

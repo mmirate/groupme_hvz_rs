@@ -23,13 +23,13 @@ This is my solution to that problem.
 ## Dependencies
 
 - A local Postgres database
-- [Rust](https://www.rust-lang.org) (stable branch)
+- A [Rust](https://www.rust-lang.org) installation (stable branch)
 
 ## How to Use
 
 ### 1. GroupMe API key
 
-Near the top of the file `src/groupme/api.rs`, there is a storage location where the GroupMe API key is compiled into the program. Substitute this key with your own. Your API key can be obtained by logging in at https://dev.groupme.com.
+Log into https://dev.groupme.com and click the "Access Token" button. A popup will appear, containing a long string of gibberish in a bolded typeface. Call this string `$GROUPME_API_KEY`.
 
 ### 2. GroupMe groups
 
@@ -43,7 +43,7 @@ Find these credentials and call them `$GATECH_USERNAME` and `$GATECH_PASSWORD`.
 
 ### 4. Run
 
-Export the database connection URL in `DATABASE_URL`, and run `cargo run --release -- $FACTION_GROUP_ID $CNC_GROUP_ID $GATECH_USERNAME $GATECH_PASSWORD` to run the program. It will block the terminal whilst running.
+Export the database connection URL in `DATABASE_URL`, and run `GROUPME_API_KEY=$GROUPME_API_KEY cargo run --release -- $FACTION_GROUP_ID $CNC_GROUP_ID $GATECH_USERNAME $GATECH_PASSWORD` to run the program. It will block the terminal whilst running.
 
 ### 5. Verify
 
@@ -52,7 +52,5 @@ To check that the program is functioning on a basic level, type the exact messag
 ## Limitations
 
 - Polls the server every few seconds. This is bad for both sides' network performance and even worse for clientside power consumption. The original website frontend itself is no different, however.
-- This program lacks the feature of laying dormant until activated via the command&control channel; impact is that you must be at a full-fledged computer in order to activate this program in the wake of a previous program-operator's ... err, faction-switch.
 - Error handling is primitive (`try!(x :: Result<T, Box<Error>>)` at best; `unwrap()` at worst). Most errors will print an error and halt the current poll or send; non-transient errors (e.g. network down) will additionally spam stderr with highly-cryptic messages and possibly abort the program; you should take care that the program is restarted upon aborting.
-- Obtaining the Group-IDs to give this program, is nigh-impossible without using the GroupMe API. TODO: automatically discover/upsert the command&control Group.
 

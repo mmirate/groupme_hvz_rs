@@ -23,7 +23,7 @@ pub mod hvz;
 pub mod syncer;
 pub mod render;
 
-mod errors {
+pub mod errors {
     #![recursion_limit = "2048"]
     error_chain! {
         foreign_links {
@@ -166,7 +166,7 @@ pub mod periodic {
 }
 
 pub mod conduit_to_groupme { // A "god" object. What could go wrong?
-    use std;
+    use std;                 // *500 LOC later*: that.
     use hvz;
     use hvz_syncer;
     use groupme_syncer;
@@ -295,14 +295,20 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     }
 
 
-    pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, missions: bool, annxs: bool }
+    pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, missions: bool, annxs: bool, dormant: bool }
     impl ConduitHvZToGroupme {
-        pub fn new(factiongroup: groupme::Group, cncgroup: groupme::Group, username: String, password: String) -> Self {
+        pub fn new(factiongroup: groupme::Group, mut cncgroup: groupme::Group, username: String, password: String) -> Self {
             let mut bots = std::collections::BTreeMap::new();
             for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie), BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)].into_iter() {
                 bots.insert(role, groupme::Bot::upsert(&factiongroup, role.nickname(), role.avatar_url(), None).unwrap());
             }
-            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(username, password), bots: bots, missions: true, annxs: false }
+            let dormant = match cncgroup.description {
+                Some(ref s) if s == "active" => false,
+                Some(ref s) if s == "dormant" => true,
+                _ => { cncgroup.update(None, "dormant".to_string().into(), None, None).unwrap(); true },
+            };
+            cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to enter it.", if dormant { "DORMANT" } else { "ACTIVE" }), None).unwrap();
+            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(username, password), bots: bots, missions: true, annxs: false, dormant: dormant }
         }
         pub fn mic_check(&mut self) -> Result<()> {
             for (role, bot) in self.bots.iter() {
@@ -324,23 +330,30 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             Ok(())
         }
         pub fn quick_mic_check(&mut self) -> Result<()> {
-            self.factionsyncer.group.post("Okay, the bot is online again.".to_string(), None).map(|_| ())
+            let text = if self.dormant { "Okay, backup bot is up. Ping me if the current bot-operator dies." } else { "Okay, the bot is online again." };
+            self.factionsyncer.group.post(text.to_string(), None).map(|_| ())
         }
     }
     impl periodic::Periodic for ConduitHvZToGroupme {
         fn tick(&mut self, i: usize) -> Result<()> {
             let new_cnc_messages = try!(self.cncsyncer.update_messages());
             for message in new_cnc_messages {
-                if message.text() == "!mic check please" {
+                if !message.favorited_by.is_empty() { continue; }
+                let _text = message.text().clone();
+                let words = _text.split_whitespace().collect::<Vec<_>>();
+                if words == ["!mic", "check", "please"] {
                     try!(self.cncsyncer.group.post("<> mic check; aye, aye".to_string(), None));
+                    try!(message.like());
                     try!(self.mic_check());
                 }
-                if message.text() == "!heartbeat please" {
+                if words == ["!heartbeat", "please"] {
                     try!(self.cncsyncer.group.post("<> quick mic check; aye, aye".to_string(), None));
+                    try!(message.like());
                     try!(self.quick_mic_check());
                 }
-                if message.text() == "!headcount please" {
+                if words == ["!headcount", "please"] {
                     try!(self.cncsyncer.group.post("<> headcount; aye, aye".to_string(), None));
+                    try!(message.like());
                     let (h, z) = (self.hvz.killboard.get(&hvz::Faction::Human).map(Vec::len).unwrap_or_default(), self.hvz.killboard.get(&hvz::Faction::Zombie).map(Vec::len).unwrap_or_default());
                     if let Some(bot) = self.bots.get(&BotRole::Killboard(if z == 0 { hvz::Faction::Human } else { hvz::Faction::Zombie })) {
                         if z == 0 {
@@ -350,29 +363,77 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         }
                     }
                 }
-                if message.text() == "!missions on" { self.missions = true; }
-                if message.text() == "!missions off" { self.missions = false; }
-                if message.text().starts_with("!ann") && message.text().ends_with(" on") { self.annxs = true; }
-                if message.text().starts_with("!ann") && message.text().ends_with(" off") { self.annxs = false; }
+                if words.get(0) == Some(&"!missions") {
+                    match words.get(1) {
+                        Some(&"on") => {
+                            try!(self.cncsyncer.group.post("<> mission annunciation ON; aye, aye".to_string(), None));
+                            try!(message.like());
+                            self.missions = true;
+                        },
+                        Some(&"off") => {
+                            try!(self.cncsyncer.group.post("<> mission annunciation OFF; aye, aye".to_string(), None));
+                            try!(message.like());
+                            self.missions = false;
+                        },
+                        _ => {},
+                    }
+                }
+                if words.get(0).map(|s| s.starts_with("!ann")).unwrap_or(false) {
+                    match words.get(1) {
+                        Some(&"on") => {
+                            try!(self.cncsyncer.group.post("<> announcement annunciation ON; aye, aye".to_string(), None));
+                            try!(message.like());
+                            self.annxs = true;
+                        },
+                        Some(&"off") => {
+                            try!(self.cncsyncer.group.post("<> announcement annunciation OFF; aye, aye".to_string(), None));
+                            try!(message.like());
+                            self.annxs = false;
+                        },
+                        _ => {},
+                    }
+                }
+                if words.get(0) == Some(&"!wakeup") {
+                    try!(self.cncsyncer.group.post("<> waking up; aye, aye. good luck, operator. say \"!heartbeat please\" if you wish to announce my awakening.".to_string(), None));
+                    try!(self.cncsyncer.group.update(None, "active".to_string().into(), None, None));
+                    try!(message.like());
+                    self.dormant = false;
+                }
+                if words.get(0) == Some(&"!sleep") {
+                    try!(self.cncsyncer.group.post("<> going to sleep; aye, aye".to_string(), None));
+                    try!(self.cncsyncer.group.update(None, "dormant".to_string().into(), None, None));
+                    try!(message.like());
+                    self.dormant = true;
+                }
+                if words.get(0) == Some(&"!dead") {
+                    try!(self.cncsyncer.group.post("<> going to sleep; aye, aye. may the horde be with you.".to_string(), None));
+                    try!(self.cncsyncer.group.update(None, "dormant".to_string().into(), None, None));
+                    try!(message.like());
+                    self.dormant = true;
+                }
             }
             lazy_static!{
                 static ref MESSAGE_TO_HVZCHAT_RE: regex::Regex = regex::Regex::new(r"^@(?P<faction>(?:[Gg]en(?:eral)?|[Aa]ll)|(?:[Hh]um(?:an)?)|(?:[Zz]omb(?:ie)?))(?: |-)?(?:[Cc]hat)? (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_EVERYONE_RE: regex::Regex = regex::Regex::new(r"^@[Ee]veryone (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_ADMINS_RE: regex::Regex = regex::Regex::new(r"^@[Aa]dmins (?P<message>.+)").unwrap();
-                static ref ALLOWED_MESSAGEBLASTERS: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::from_iter(vec!["6852241" /* Kevin F */,
-"13808540" /* Marco Kelner */,
+                static ref ALLOWED_MESSAGEBLASTERS: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::from_iter(vec![
 "16614279" /* Anthony Stranko */,
-"13153662" /* Josh Netter */,
-"21806948" /* Milo Mirate */,
-"21815306" /* Sriram Ganesan */,
-"22267657" /* Scott Nealon */,
-"17031287" /* Matt Zilvetti */,
+"11791190" /* Cameron Braun */,
 "13883710" /* Gabriela Lago */,
-"13830361" /* Luke Schussler */]);
+"13153662" /* Josh Netter */,
+"6852241" /* Kevin F */,
+"13830361" /* Luke Schussler */,
+"13808540" /* Marco Kelner */,
+"17031287" /* Matt Zilvetti */,
+"21806948" /* Milo Mirate */,
+"22267657" /* Scott Nealon */,
+"21815306" /* Sriram Ganesan */,
+                ]);
             }
             let new_messages = try!(self.factionsyncer.update_messages());
             println!("new_messages.len() = {:?}", new_messages.len());
             for message in new_messages {
+                if self.dormant { continue; }
                 if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
                     if ALLOWED_MESSAGEBLASTERS.contains(message.user_id.as_str()) {
                         if let Some(m) = cs.name("message") {
@@ -384,7 +445,6 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
                     if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
                         try!(self.hvz.scraper.post_chat(f.into(), format!("[{} from GroupMe] {}", message.name, m).as_str()));
-                        //println!("{}", format!("[{} from GroupMe] {}", message.name, m));
                     }
                 } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) { // TODO REDO
                     if let Some(m) = cs.name("message") {
@@ -412,6 +472,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         }
                         continue;
                     }
+                    if self.dormant { continue; }
                     let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
                     match self.bots.get(&role) {
                         Some(ref bot) => {
@@ -423,34 +484,34 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             try!(bot.post(m,
                                           None //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
                                           )); },
-                        None => {} // TODO debug-log this stuff
+                        None => { println!("HOLY S*** I JUST ATE SOME DATA!") }
                     }
                 }
             }
             if (15 - ((minute as i32)%30)).abs() >= 12 && i % 4 == 0 /*i % 6 == 1*/ {
-                let _ = self.hvz.update_panelboard();
                 let (additions, _deletions) = try!(self.hvz.update_panelboard());
                 for (kind, new_panels) in additions.into_iter() {
                     if kind == hvz::PanelKind::Announcement && !self.annxs { continue; }
                     if kind == hvz::PanelKind::Mission && !self.missions { continue; }
+                    if self.dormant { continue; }
                     let role = BotRole::Panel(kind);
                     match self.bots.get(&role) {
                         Some(ref bot) => for panel in new_panels.into_iter() {
                             if kind == hvz::PanelKind::Mission && panel.particulars.map(|p| (p.start - chrono::Local::now()).num_minutes()).map(|m| m > 65 || m < 15).unwrap_or(true) { continue; } // only post about missions that are actually upcoming
-                            try!(bot.post(format!("{: <1$}", role.phrase(panel.title.as_str()), self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()])));
-                        }, // TODO do more stuff with this; image-processing?
-                        None => {} // TODO debug-log this stuff
+                            try!(bot.post_or_post_image(format!("{: <2$}\n{}", role.phrase(panel.title.as_str()), panel.text, self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()])));
+                        },
+                        None => { println!("HOLY S*** I JUST ATE SOME DATA!") }
                     }
                 }
             }
-            if i % 2 == 1 {
+            if i % 4 == 1 || (self.dormant && i % 2 == 1) {
                 let (additions, _deletions) = try!(self.hvz.update_chatboard());
                 for (faction, new_messages) in additions.into_iter() {
                     if faction == hvz::Faction::General && 7 < hour && hour < 23 { continue; }
                     let role = BotRole::Chat(faction);
                     match self.bots.get(&role) {
                         Some(ref bot) => for message in new_messages.into_iter() { try!(bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)); },
-                        None => {} // TODO debug-log this stuff
+                        None => { println!("HOLY S*** I JUST ATE SOME DATA!") }
                     }
                 }
             }
