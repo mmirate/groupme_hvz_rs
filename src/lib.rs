@@ -178,6 +178,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     use groupme;
     use groupme::{Recipient};
     use periodic;
+    use rustc_serialize;
     use rand;
     use rand::Rng;
     //use rustc_serialize::json::ToJson;
@@ -297,21 +298,27 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         else { " ".to_string() }
     }
 
+    #[derive(RustcDecodable, RustcEncodable)] struct RuntimeState { missions: bool, annxs: bool, dormant: bool, throttled_at: i64 }
+    impl RuntimeState {
+        fn write(&self, cncgroup: &mut groupme::Group) -> Result<()> {
+            cncgroup.update(None, "dormant".to_string().into(), None, None).map(|_| ())
+        }
+    }
+    impl Default for RuntimeState { fn default() -> Self { RuntimeState { missions: false, annxs: false, dormant: true, throttled_at: 0i64 } } }
 
-    pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, missions: bool, annxs: bool, dormant: bool, throttled_at: Option<std::time::Instant> } // TODO replace these last several fields with a JSON-serializable "state" struct
+    pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, state: RuntimeState }
     impl ConduitHvZToGroupme {
         pub fn new(factiongroup: groupme::Group, mut cncgroup: groupme::Group, username: String, password: String) -> Self {
             let mut bots = std::collections::BTreeMap::new();
             for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie), BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)].into_iter() {
                 bots.insert(role, groupme::Bot::upsert(&factiongroup, role.nickname(), role.avatar_url(), None).unwrap());
             }
-            let dormant = match cncgroup.description {
-                Some(ref s) if s == "active" => false,
-                Some(ref s) if s == "dormant" => true,
-                _ => { cncgroup.update(None, "dormant".to_string().into(), None, None).unwrap(); true },
+            let state = match rustc_serialize::json::decode::<RuntimeState>(cncgroup.description.as_ref().map(AsRef::as_ref).unwrap_or("")) {
+                Ok(s) => s,
+                _ => { let s = RuntimeState::default(); s.write(&mut cncgroup).unwrap(); s }
             };
-            cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to enter it.", if dormant { "DORMANT" } else { "ACTIVE" }), None).unwrap();
-            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(username, password), bots: bots, missions: true, annxs: false, dormant: dormant, throttled_at: None }
+            cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to enter it.", if state.dormant { "DORMANT" } else { "ACTIVE" }), None).unwrap();
+            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(username, password), bots: bots, state: state }
         }
         pub fn mic_check(&mut self) -> Result<()> {
             for (role, bot) in self.bots.iter() {
@@ -340,7 +347,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             Ok(())
         }
         pub fn quick_mic_check(&mut self) -> Result<()> {
-            let text = if self.dormant { "Okay, backup bot is up. Ping me if the current bot-operator dies." } else { "Okay, the bot is online again." };
+            let text = if self.state.dormant { "Okay, backup bot is up. Ping me if the current bot-operator dies." } else { "Okay, the bot is online again." };
             self.factionsyncer.group.post(text.to_string(), None).map(|_| ())
         }
 
@@ -377,12 +384,14 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         Some(&"on") => {
                             try!(self.cncsyncer.group.post("<> mission annunciation ON; aye, aye".to_string(), None));
                             try!(message.like());
-                            self.missions = true;
+                            self.state.missions = true;
+                            try!(self.state.write(&mut self.cncsyncer.group));
                         },
                         Some(&"off") => {
                             try!(self.cncsyncer.group.post("<> mission annunciation OFF; aye, aye".to_string(), None));
                             try!(message.like());
-                            self.missions = false;
+                            self.state.missions = false;
+                            try!(self.state.write(&mut self.cncsyncer.group));
                         },
                         _ => {},
                     }
@@ -392,12 +401,14 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         Some(&"on") => {
                             try!(self.cncsyncer.group.post("<> announcement annunciation ON; aye, aye".to_string(), None));
                             try!(message.like());
-                            self.annxs = true;
+                            self.state.annxs = true;
+                            try!(self.state.write(&mut self.cncsyncer.group));
                         },
                         Some(&"off") => {
                             try!(self.cncsyncer.group.post("<> announcement annunciation OFF; aye, aye".to_string(), None));
                             try!(message.like());
-                            self.annxs = false;
+                            self.state.annxs = false;
+                            try!(self.state.write(&mut self.cncsyncer.group));
                         },
                         _ => {},
                     }
@@ -406,19 +417,22 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     try!(self.cncsyncer.group.post("<> waking up; aye, aye. good luck, operator. say \"!heartbeat please\" if you wish to announce my awakening.".to_string(), None));
                     try!(self.cncsyncer.group.update(None, "active".to_string().into(), None, None));
                     try!(message.like());
-                    self.dormant = false;
+                    self.state.dormant = false;
+                    try!(self.state.write(&mut self.cncsyncer.group));
                 }
                 if words.get(0) == Some(&"!sleep") {
                     try!(self.cncsyncer.group.post("<> going to sleep; aye, aye".to_string(), None));
                     try!(self.cncsyncer.group.update(None, "dormant".to_string().into(), None, None));
                     try!(message.like());
-                    self.dormant = true;
+                    self.state.dormant = true;
+                    try!(self.state.write(&mut self.cncsyncer.group));
                 }
                 if words.get(0) == Some(&"!dead") {
                     try!(self.cncsyncer.group.post("<> going to sleep; aye, aye. may the horde be with you.".to_string(), None));
                     try!(self.cncsyncer.group.update(None, "dormant".to_string().into(), None, None));
                     try!(message.like());
-                    self.dormant = true;
+                    self.state.dormant = true;
+                    try!(self.state.write(&mut self.cncsyncer.group));
                 }
             }
             Ok(())
@@ -446,7 +460,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             let new_messages = try!(self.factionsyncer.update_messages());
             println!("new_messages.len() = {:?}", new_messages.len());
             for message in new_messages {
-                if self.dormant { continue; }
+                if self.state.dormant { continue; }
                 if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
                     if ALLOWED_MESSAGEBLASTERS.contains(message.user_id.as_str()) {
                         if let Some(m) = cs.name("message") {
@@ -498,7 +512,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         }
                         continue;
                     }
-                    if self.dormant { continue; }
+                    if self.state.dormant { continue; }
                     let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
                     match self.bots.get(&role) {
                         Some(ref bot) => {
@@ -522,9 +536,9 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             if (15 - ((minute as i32)%30)).abs() >= 12 && i % 4 == 0 /*i % 6 == 1*/ {
                 let (additions, _deletions) = try!(self.hvz.update_panelboard());
                 for (kind, new_panels) in additions.into_iter() {
-                    if kind == hvz::PanelKind::Announcement && !self.annxs { continue; }
-                    if kind == hvz::PanelKind::Mission && !self.missions { continue; }
-                    if self.dormant { continue; }
+                    if kind == hvz::PanelKind::Announcement && !self.state.annxs { continue; }
+                    if kind == hvz::PanelKind::Mission && !self.state.missions { continue; }
+                    if self.state.dormant { continue; }
                     let role = BotRole::Panel(kind);
                     match self.bots.get(&role) {
                         Some(ref bot) => for panel in new_panels.into_iter() {
@@ -540,11 +554,11 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 
         fn process_chatboard(&mut self, i: usize) -> Result<()> {
             let (hour, _minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
-            if i % 4 == 1 || (self.dormant && i % 2 == 1) {
+            if i % 4 == 1 || (self.state.dormant && i % 2 == 1) {
                 let (additions, _deletions) = try!(self.hvz.update_chatboard());
                 for (faction, new_messages) in additions.into_iter() {
                     if faction == hvz::Faction::General && 7 < hour && hour < 23 { continue; }
-                    if self.dormant { continue; }
+                    if self.state.dormant { continue; }
                     let role = BotRole::Chat(faction);
                     match self.bots.get(&role) {
                         Some(ref bot) => for message in new_messages.into_iter() { try!(bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)); },
@@ -556,19 +570,16 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         }
 
         fn being_throttled(&mut self, e: Result<()>) -> Result<()> {
-            match std::mem::replace(&mut self.throttled_at, Some(std::time::Instant::now())) {
-                Some(ref i) if i.elapsed().as_secs() < 60*10 => { e },
-                _ => {
-                    std::mem::replace(&mut self.throttled_at, Some(std::time::Instant::now()));
-                    self.throttled_at = Some(std::time::Instant::now());
-                    let mut it = self.bots.iter();
-                    if let Some((_, bot)) = it.next() {
-                        let mut ret = vec![];
-                        ret.push(e);
-                        ret.push(bot.post("Ouch. We're being throttled. Going off-line for a few minutes. Please check the killboard while we're gone!".to_owned(), None).map(|_| ()));
-                        ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ())
-                    } else { println!("HOLY S*** I JUST ATE SOME DATA!"); e }
-                }
+            let now = chrono::Local::now().timestamp();
+            if now - self.state.throttled_at < 60*10 { e } else {
+                self.state.throttled_at = now;
+                let mut it = self.bots.iter();
+                if let Some((_, bot)) = it.next() {
+                    let mut ret = vec![];
+                    ret.push(e);
+                    ret.push(bot.post("Ouch. We're being throttled. Going off-line for a few minutes. Please check the killboard while we're gone!".to_owned(), None).map(|_| ())); // TODO ping someone here
+                    ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ())
+                } else { println!("HOLY S*** I JUST ATE SOME DATA!"); e }
             }
         }
 
@@ -579,7 +590,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             let mut ret = vec![];
             ret.push(self.process_cnc(i));
             ret.push(self.process_groupme_messages(i));
-            if !self.throttled_at.clone().map(|i| i.elapsed().as_secs() < 60*10).unwrap_or(false) {
+            let now = chrono::Local::now().timestamp();
+            if now - self.state.throttled_at > 60*10 {
                 ret.push(self.process_killboard(i));
                 ret.push(self.process_panelboard(i));
                 ret.push(self.process_chatboard(i));
