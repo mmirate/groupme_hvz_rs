@@ -151,16 +151,25 @@ impl HvZScraper {
         //println!("Set-Cookie: {:?}", res.headers.get::<hyper::header::SetCookie>());
         res.headers.get::<hyper::header::SetCookie>().map(|j| j.0.iter().map(|c : &hyper::header::CookiePair| { self.cookiejar.remove(&c.name); self.cookiejar.insert(c.name.clone(), c.clone()) }).last()); res
     }
-    fn slurp<R: std::io::Read>(mut r: R) -> std::io::Result<String> { let mut buffer = Vec::<u8>::new(); r.read_to_end(&mut buffer).and_then(|_| Ok(String::from_utf8_lossy(&buffer).to_string())) }
+    fn _slurp<R: std::io::Read>(mut r: R) -> std::io::Result<String> { let mut buffer = Vec::<u8>::new(); r.read_to_end(&mut buffer).and_then(|_| Ok(String::from_utf8_lossy(&buffer).to_string())) }
+    #[inline] fn slurp(res: hyper::client::response::Response) -> hyper::Result<String> { Self::_slurp(res).map_err(hyper::error::Error::Io) }
     //fn succeed(res: hyper::client::response::Response) -> hyper::client::response::Response { assert!(res.status.is_success()); res }
     fn do_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, canfail: bool) -> Result<hyper::client::response::Response> {
-        let r = self.read_cookies(rb).send();
-        //println!("response: {:?}", r);
-        r.map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { Ok(res) } else { println!("NON-SLURP FAILED: {:?}", res); Err(hyper::error::Error::Method) }).map_err(From::from)
+        self.read_cookies(rb).send().map(|res| self.write_cookies(res)).map_err(Error::from).and_then(|res| {
+            if res.status == hyper::status::StatusCode::Unregistered(509) {
+                bail!(ErrorKind::BandwidthLimitExceeded)
+            }
+            if res.status.is_success() || canfail { Ok(res) } else {
+                println!("NON-SLURP FAILED: {:?}", res);
+                bail!(ErrorKind::HttpError(res.status))
+            }
+        })
     }
-    fn do_and_slurp_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, read: bool, canfail: bool) -> Result<String> {
-        self.read_cookies(rb).send().map(|res| self.write_cookies(res)).and_then(|res| if res.status.is_success() || canfail { if read { Self::slurp(res).map_err(hyper::error::Error::Io) } else { Ok(String::new()) } } else { println!("SLURP FAILED: {:?}", res); Err(hyper::error::Error::Method) }).map_err(From::from)
-    }
+    //fn do_and_slurp_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, read: bool, canfail: bool) -> Result<String> {
+    //    self.read_cookies(rb).send().map(|res|
+    //                                     self.write_cookies(res)).and_then(|res|
+    //                                                                       if res.status.is_success() || canfail { if read { Self::slurp(res) } else { Ok(String::new()) } } else { println!("SLURP FAILED: {:?}", res); bail!(ErrorKind::HttpError(res.status)) }).map_err(From::from)
+    //}
     fn _redirect_url(res: &hyper::client::response::Response) -> Option<url::Url> {
         match res.headers.get::<hyper::header::Location>() { Some(&hyper::header::Location(ref loc)) => { res.url.join(loc).ok() }, _ => None }
     }
@@ -189,15 +198,15 @@ impl HvZScraper {
         client.set_redirect_policy(hyper::client::RedirectPolicy::FollowNone);
         if res.url.host_str().unwrap_or("") != "hvz.gatech.edu" {
             let login_page = if res.url.host_str().map(|h| h == "login.gatech.edu").unwrap_or(false) {
-                try!(Self::slurp(res).map_err(hyper::error::Error::Io))
+                try!(Self::slurp(res))
             } else {
-                try!(self.do_and_slurp_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true, false))
+                try!(Self::slurp(try!(self.do_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), false))))
             };
             let (body, u) = try!(self._fill_login_form(scraper::Html::parse_document(login_page.as_str())));
             let mut res = try!(self.do_with_cookies(client.post(u.as_str()).body(&body).header(form_type()), true));
             while res.url.host_str().unwrap_or("") != "hvz.gatech.edu" {
                 if let Some(loc) = Self::_redirect_url(&res) { if loc.host_str().unwrap_or("") == "hvz.gatech.edu" { break; } }
-                let document = scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true, true)).as_str());
+                let document = scraper::Html::parse_document(try!(Self::slurp(try!(self.do_with_cookies(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true)))).as_str());
                 let (body, u) = try!(self._fill_login_form(document));
                 res = try!(self.do_with_cookies(client.post(u.as_str()).body(&body).header(form_type()), true));
                 if !(res.status.is_success() || res.status.is_redirection()) {
@@ -220,7 +229,7 @@ impl HvZScraper {
     }
     pub fn whois(&mut self, gtname: &str) -> Result<Player> {
         let client = try!(self.login());
-        Player::from_document(scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get(&format!("https://hvz.gatech.edu/profile/?gtname={}", gtname)), true, false)).as_str()))
+        Player::from_document(scraper::Html::parse_document(try!(Self::slurp(try!(self.do_with_cookies(client.get(&format!("https://hvz.gatech.edu/profile/?gtname={}", gtname)), false)))).as_str()))
     }
     fn shrink_to_fit<T>(mut v: Vec<T>) -> Vec<T> { v.shrink_to_fit(); v }
     #[inline] pub fn whoami(&mut self) -> Result<Player> { let u = self.username.clone(); self.whois(u.as_str()) }
@@ -231,7 +240,7 @@ impl HvZScraper {
         let mut ret = Killboard::new();
         for faction in Faction::killboards() {
             ret.remove(&faction);
-            ret.insert(faction, try!(scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get("https://hvz.gatech.edu/killboard/"), true, false)).as_str()).select(&try!(scraper::Selector::parse(&Self::trace(format!("#{}-killboard a[href*=\"gtname\"]", &faction))).map_err(|()| Error::from(ErrorKind::CSS)))).map(|link| { Ok(Player { faction: faction, .. try!(Player::from_kb_link(link)) }) }).collect::<Result<Vec<_>>>()));
+            ret.insert(faction, try!(scraper::Html::parse_document(try!(Self::slurp(try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/killboard/"), false)))).as_str()).select(&try!(scraper::Selector::parse(&Self::trace(format!("#{}-killboard a[href*=\"gtname\"]", &faction))).map_err(|()| Error::from(ErrorKind::CSS)))).map(|link| { Ok(Player { faction: faction, .. try!(Player::from_kb_link(link)) }) }).collect::<Result<Vec<_>>>()));
         }
         Ok(ret)
     }
@@ -246,7 +255,7 @@ impl HvZScraper {
         for faction in Faction::chats() {
             if faction != Faction::General && faction != try!(self.whoami()).faction { continue; }
             ret.remove(&faction);
-            ret.insert(faction, Self::shrink_to_fit(try!(scraper::Html::parse_fragment(try!(self.do_and_slurp_with_cookies(client.post("https://hvz.gatech.edu/chat/_update.php").body(&format!("aud={:?}", faction)).header(form_type()), true, false)).as_str()).select(&row_selector).map(|tr| Ok(Message { receiver: faction, .. try!(Message::from_tr(tr)) })).collect::<Result<Vec<_>>>())));
+            ret.insert(faction, Self::shrink_to_fit(try!(scraper::Html::parse_fragment(try!(Self::slurp(try!(self.do_with_cookies(client.post("https://hvz.gatech.edu/chat/_update.php").body(&format!("aud={:?}", faction)).header(form_type()), false)))).as_str()).select(&row_selector).map(|tr| Ok(Message { receiver: faction, .. try!(Message::from_tr(tr)) })).collect::<Result<Vec<_>>>())));
         }
         Ok(ret)
     }
@@ -255,7 +264,7 @@ impl HvZScraper {
         let mut ret = Panelboard::new();
         for kind in vec![/*PanelKind::Announcement, */PanelKind::Mission] {
             ret.remove(&kind);
-            ret.insert(kind, Self::shrink_to_fit(try!(scraper::Html::parse_document(try!(self.do_and_slurp_with_cookies(client.get(&format!("https://hvz.gatech.edu/{}s", kind)), true, false)).as_str()).select(&try!(scraper::Selector::parse(&format!("div.panel.{}", kind)).map_err(|()| Error::from(ErrorKind::CSS)))).map(|div| Ok(Panel { kind: kind, .. try!(Panel::from_div(div)) })).collect::<Result<Vec<_>>>())));
+            ret.insert(kind, Self::shrink_to_fit(try!(scraper::Html::parse_document(try!(Self::slurp(try!(self.do_with_cookies(client.get(&format!("https://hvz.gatech.edu/{}s", kind)), false)))).as_str()).select(&try!(scraper::Selector::parse(&format!("div.panel.{}", kind)).map_err(|()| Error::from(ErrorKind::CSS)))).map(|div| Ok(Panel { kind: kind, .. try!(Panel::from_div(div)) })).collect::<Result<Vec<_>>>())));
         }
         Ok(ret)
     }

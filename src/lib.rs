@@ -60,6 +60,9 @@ pub mod errors {
             GaTechCreds {
                 description("Login credentials are wrong.")
             }
+            BandwidthLimitExceeded { // code 509
+                description("Georgia Tech website bandwidth limit exceeded.")
+            }
         }
     }
 }
