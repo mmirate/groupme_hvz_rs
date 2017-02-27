@@ -298,7 +298,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     }
 
 
-    pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, missions: bool, annxs: bool, dormant: bool }
+    pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, missions: bool, annxs: bool, dormant: bool, throttled_at: Option<std::time::Instant> } // TODO replace these last several fields with a JSON-serializable "state" struct
     impl ConduitHvZToGroupme {
         pub fn new(factiongroup: groupme::Group, mut cncgroup: groupme::Group, username: String, password: String) -> Self {
             let mut bots = std::collections::BTreeMap::new();
@@ -311,7 +311,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 _ => { cncgroup.update(None, "dormant".to_string().into(), None, None).unwrap(); true },
             };
             cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to enter it.", if dormant { "DORMANT" } else { "ACTIVE" }), None).unwrap();
-            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(username, password), bots: bots, missions: true, annxs: false, dormant: dormant }
+            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(username, password), bots: bots, missions: true, annxs: false, dormant: dormant, throttled_at: None }
         }
         pub fn mic_check(&mut self) -> Result<()> {
             for (role, bot) in self.bots.iter() {
@@ -343,9 +343,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             let text = if self.dormant { "Okay, backup bot is up. Ping me if the current bot-operator dies." } else { "Okay, the bot is online again." };
             self.factionsyncer.group.post(text.to_string(), None).map(|_| ())
         }
-    }
-    impl periodic::Periodic for ConduitHvZToGroupme {
-        fn tick(&mut self, i: usize) -> Result<()> {
+
+        fn process_cnc(&mut self, _i: usize) -> Result<()> {
             let new_cnc_messages = try!(self.cncsyncer.update_messages());
             for message in new_cnc_messages {
                 if !message.favorited_by.is_empty() { continue; }
@@ -422,6 +421,10 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     self.dormant = true;
                 }
             }
+            Ok(())
+        }
+
+        fn process_groupme_messages(&mut self, _i: usize) -> Result<()> {
             lazy_static!{
                 static ref MESSAGE_TO_HVZCHAT_RE: regex::Regex = regex::Regex::new(r"^@(?P<faction>(?:[Gg]en(?:eral)?|[Aa]ll)|(?:[Hh]um(?:an)?)|(?:[Zz]omb(?:ie)?))(?: |-)?(?:[Cc]hat)? (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_EVERYONE_RE: regex::Regex = regex::Regex::new(r"^@[Ee]veryone (?P<message>.+)").unwrap();
@@ -478,7 +481,11 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     }
                 }
             }
-            let (hour, minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
+            Ok(())
+        }
+
+        fn process_killboard(&mut self, i: usize) -> Result<()> {
+            let (hour, _minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
             if 2 < hour && hour < 7 { return Ok(()); }
             if i % 5 == 0 {
                 let (additions, _deletions) = try!(self.hvz.update_killboard());
@@ -501,12 +508,17 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             };
                             //let len = m.len();
                             try!(bot.post(m,
-                                          None //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
-                                          )); },
+                                        None //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
+                                        )); },
                         None => { println!("HOLY S*** I JUST ATE SOME DATA!") }
                     }
                 }
             }
+            Ok(())
+        }
+
+        fn process_panelboard(&mut self, i: usize) -> Result<()> {
+            let (_hour, minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
             if (15 - ((minute as i32)%30)).abs() >= 12 && i % 4 == 0 /*i % 6 == 1*/ {
                 let (additions, _deletions) = try!(self.hvz.update_panelboard());
                 for (kind, new_panels) in additions.into_iter() {
@@ -523,10 +535,16 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     }
                 }
             }
+            Ok(())
+        }
+
+        fn process_chatboard(&mut self, i: usize) -> Result<()> {
+            let (hour, _minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
             if i % 4 == 1 || (self.dormant && i % 2 == 1) {
                 let (additions, _deletions) = try!(self.hvz.update_chatboard());
                 for (faction, new_messages) in additions.into_iter() {
                     if faction == hvz::Faction::General && 7 < hour && hour < 23 { continue; }
+                    if self.dormant { continue; }
                     let role = BotRole::Chat(faction);
                     match self.bots.get(&role) {
                         Some(ref bot) => for message in new_messages.into_iter() { try!(bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)); },
@@ -535,6 +553,43 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 }
             }
             Ok(())
+        }
+
+        fn being_throttled(&mut self, e: Result<()>) -> Result<()> {
+            match std::mem::replace(&mut self.throttled_at, Some(std::time::Instant::now())) {
+                Some(ref i) if i.elapsed().as_secs() < 60*10 => { e },
+                _ => {
+                    std::mem::replace(&mut self.throttled_at, Some(std::time::Instant::now()));
+                    self.throttled_at = Some(std::time::Instant::now());
+                    let mut it = self.bots.iter();
+                    if let Some((_, bot)) = it.next() {
+                        let mut ret = vec![];
+                        ret.push(e);
+                        ret.push(bot.post("Ouch. We're being throttled. Going off-line for a few minutes. Please check the killboard while we're gone!".to_owned(), None).map(|_| ()));
+                        ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ())
+                    } else { println!("HOLY S*** I JUST ATE SOME DATA!"); e }
+                }
+            }
+        }
+
+    }
+    impl periodic::Periodic for ConduitHvZToGroupme {
+        fn tick(&mut self, i: usize) -> Result<()> {
+            // non-use of try!() is intentional here; we want to attempt each function even if one fails
+            let mut ret = vec![];
+            ret.push(self.process_cnc(i));
+            ret.push(self.process_groupme_messages(i));
+            if !self.throttled_at.clone().map(|i| i.elapsed().as_secs() < 60*10).unwrap_or(false) {
+                ret.push(self.process_killboard(i));
+                ret.push(self.process_panelboard(i));
+                ret.push(self.process_chatboard(i));
+            }
+            match ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ()) {
+                x @ Err(Error(ErrorKind::BandwidthLimitExceeded, _)) => {
+                    self.being_throttled(x)
+                },
+                x => x
+            }
         }
     }
 }
