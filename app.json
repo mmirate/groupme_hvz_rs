@@ -1,0 +1,22 @@
+{
+  "name": "GroupMe ↔ GA Tech HvZ",
+  "description": "Scraper for the GA Tech HvZ website which announces its results on GroupMe",
+  "logo": "https://upload.wikimedia.org/wikipedia/commons/f/f6/HAL9000.svg",
+  "repository": "https://github.com/mmirate/groupme_hvz_rs",
+  "success_url": "/welcome",
+  "keywords": ["rust", "groupme"],
+  "env": {
+    "GATECH_USERNAME": {"description": "Georgia Tech username", "required": true},
+    "GATECH_PASSWORD": {"description": "Georgia Tech password", "required": true},
+    "GROUPME_API_KEY": {"description": "Your \"Access Token\", obtainable by logging into https://dev.groupme.com and clicking the \"Access Token\" button at the top-right.", "required": true},
+    "FACTION_GROUP_NAME": {"description": "The exact name of your faction's Group.", "required": true},
+    "CNC_GROUP_NAME": {"description": "The exact name of a Group containing just you. (A Group by this name will be created if you don't already have one.)", "required": true},
+    "RUST_BACKTRACE": {"description": "(Leave this set to \"1\".)", "value": "1"}
+  },
+  "buildpacks": [ { "url": "https://github.com/mmirate/heroku-buildpack-rust#patch-1" } ],
+  "formation": {
+    "web": { "quantity": 1, "size": "free" },
+    "worker": { "quantity": 1, "size": "free" }
+  },
+  "addons": [ "heroku-postgresql:hobby-dev", "logentries" ]
+}

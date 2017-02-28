@@ -12,6 +12,8 @@ pub use self::api::{MessageSelector,Mentions};
 use self::api::{ReadMessageEndpoint,MessageEndpoint};
 use rustc_serialize::json::Json;
 
+pub use self::api::User;
+
 //use self::api::*;
 
 //fn trace<T: Debug>(x: T) -> T { println!("{:?}", x); x }

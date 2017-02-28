@@ -371,6 +371,6 @@ impl Images {
 pub struct User { pub user_id: String, pub created_at: u64, pub updated_at: u64, pub id: String, pub name: String, pub email: Option<String>, pub phone_number: Option<String>, pub image_url: Option<String>, pub sms: Option<bool> }
 impl User {
     //#[inline] fn nickname(&self) -> &str { &self.name }
-    fn get() -> Result<Self> { Ok(try!(Self::decode(&mut rustc_serialize::json::Decoder::new(try!(Users::me()))))) }
+    pub fn get() -> Result<Self> { Ok(try!(Self::decode(&mut rustc_serialize::json::Decoder::new(try!(Users::me()))))) }
 }
 

@@ -20,37 +20,48 @@ The general solution to this problem involves a third-party system called "Group
 
 This is my solution to that problem.
 
+## Prerequisites
+
+- A Georgia Tech SSO account. (If you're a current student or employee of Georgia Tech, you have this.)
+- A [Heroku](https://heroku.com) account.
+- An [Uptime Robot](https://uptimerobot.com) account.
+
 ## Dependencies
 
-- A local Postgres database
-- A [Rust](https://www.rust-lang.org) installation (stable branch)
+This program depends on the Rust-language compiler, toolkit, and many third-party libraries. However, one part of the software used to deploy the program to Heroku (namely, the "buildpack") downloads all of this onto storage space associated with your Heroku account, so you do not need to install any software on your own machine.
 
 ## How to Use
 
-### 1. GroupMe API key
+(Technical users: it is possible to run this on your own machine if it's a modern Unix-like, but you'll need to figure everything out.)
 
-Log into https://dev.groupme.com and click the "Access Token" button. A popup will appear, containing a long string of gibberish in a bolded typeface. Call this string `$GROUPME_API_KEY`.
+### Deploy
 
-### 2. GroupMe groups
+Click this button:
 
-In addition to the Group used by your faction, this program also uses a dedicated, personal Group in order to send/receive commands from you. Create such a Group, with only yourself in it.
+[![Deploy](https://www.herokucdn.com/deploy/button.png)](https://heroku.com/deploy)
 
-Run `GROUPME_API_KEY=$GROUPME_API_KEY cargo run --bin find_group` in a terminal. It will output a list of all Groups you're in, and their Group IDs. Find these two particular Groups in this list, and call their Group IDs `$FACTION_GROUP_ID` and `$CNC_GROUP_ID`, respectively.
+... and fill out the form with the information needed to deploy a copy of this program onto Heroku. Once you've clicked the big purple "Deploy" button, grab a donut or something while the program compiles. Finally, after completion, click the "View" button for further instructions.
 
-### 3. Georgia Tech SSO credentials
+When the program first runs, it will probably create a new Group for you; do *not* add anyone else to it, as it is used for you to command and control your instance of the program.
 
-Find these credentials and call them `$GATECH_USERNAME` and `$GATECH_PASSWORD`.
+You should leave the program up-and-running on Heroku as long as you remain in the game's initial faction, regardless of whether any other players are also running the program.
 
-### 4. Run
+### Verify
 
-Export the database connection URL in `DATABASE_URL`, and run `GROUPME_API_KEY=$GROUPME_API_KEY cargo run --release -- $FACTION_GROUP_ID $CNC_GROUP_ID $GATECH_USERNAME $GATECH_PASSWORD` to run the program. It will block the terminal whilst running.
+To check that the program is functioning on a basic level, send the exact message, "`!heartbeat please`" to your CnC Group. This should cause the program to post a brief message, on your behalf, in your faction's Group, within about 15 seconds.
 
-### 5. Verify
+### Activate
 
-To check that the program is functioning on a basic level, type the exact message, "`!heartbeat please`" into your command&control Group. Within 15 seconds, the bot should post a brief message, on your behalf, in your faction's Group.
+If other operators of this program ... change factions ... then you may be called-upon to move your instance of the program out of its default "dormant" state. To do this, follow the direction this program posts into the CnC Group upon startup: send the exact message "`!wakeup`" to the CnC Group.
+
+### In Case of Faction-Change
+
+If, on the other hand, *you* change factions, it is imperative that, *before* your faction-change is registered, you either (a) move your instance of this program back into its "dormant" state or (b) leave your ex-faction's Group.
+
+Failure to do so may cause information leakage from your new faction to your ex-faction.
 
 ## Limitations
 
-- Polls the server every few seconds. This is bad for both sides' network performance and even worse for clientside power consumption. The original website frontend itself is no different, however.
+- Polls Georgia Tech HvZ's website every few seconds. This is bad for both sides' network performance and even worse for clientside power consumption. The original website frontend itself behaves no differently, however.
 - Error handling is primitive (`try!(x :: Result<T, Box<Error>>)` at best; `unwrap()` at worst). Most errors will print an error and halt the current poll or send; non-transient errors (e.g. network down) will additionally spam stderr with highly-cryptic messages and possibly abort the program; you should take care that the program is restarted upon aborting.
 

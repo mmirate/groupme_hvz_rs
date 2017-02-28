@@ -7,15 +7,13 @@ extern crate openssl;
 extern crate postgres;
 extern crate rand;
 extern crate rustc_serialize;
+extern crate rusttype;
 extern crate scraper;
 extern crate time;
 extern crate url;
 extern crate users;
 extern crate image;
-extern crate sdl2;
-extern crate sdl2_ttf;
 #[macro_use(static_slice)] extern crate static_slice;
-#[recursion_limit = "2048"]
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate error_chain;
 pub mod groupme;
@@ -24,11 +22,8 @@ pub mod syncer;
 pub mod render;
 
 pub mod errors {
-    #![recursion_limit = "2048"]
     error_chain! {
         foreign_links {
-            Sdl2TTFFont(::sdl2_ttf::FontError);
-            Sdl2TTFInit(::sdl2_ttf::InitError);
             Hyper (::hyper::Error);
             Io (::std::io::Error);
             Postgres (::postgres::error::Error);
@@ -313,11 +308,15 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie), BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)].into_iter() {
                 bots.insert(role, groupme::Bot::upsert(&factiongroup, role.nickname(), role.avatar_url(), None).unwrap());
             }
+            let tutorial = cncgroup.description.is_none();
             let state = match rustc_serialize::json::decode::<RuntimeState>(cncgroup.description.as_ref().map(AsRef::as_ref).unwrap_or("")) {
                 Ok(s) => s,
                 _ => { let s = RuntimeState::default(); s.write(&mut cncgroup).unwrap(); s }
             };
             cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to enter it.", if state.dormant { "DORMANT" } else { "ACTIVE" }), None).unwrap();
+            if tutorial {
+                cncgroup.post("<> annunciation of new missions and announcements can be toggled at any time. To do so, say \"!missions on\", \"!missions off\", \"!annx on\" or \"!annx off\".".to_owned(), None).unwrap();
+            }
             ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(username, password), bots: bots, state: state }
         }
         pub fn mic_check(&mut self) -> Result<()> {
@@ -508,7 +507,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     let role = BotRole::Killboard(faction);
                     if let BotRole::Killboard(hvz::Faction::Human) = role {
                         for member in new_members.iter() {
-                            try!(self.cncsyncer.group.post(format!("New player: {}@gatech.edu - {}", member.gtname, member.playername), None));
+                            try!(self.cncsyncer.group.post(format!("<> new player: {}@gatech.edu - {}", member.gtname, member.playername), None));
                         }
                         continue;
                     }

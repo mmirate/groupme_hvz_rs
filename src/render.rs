@@ -1,7 +1,8 @@
 use std;
-use sdl2;
+//use sdl2;
 use image;
-use sdl2_ttf;
+//use sdl2_ttf;
+use rusttype;
 use errors::*;
 use image::Pixel;
 
@@ -30,16 +31,6 @@ fn chunkify(s: String, len: usize) -> Vec<String> {
 
 // TODO 2-layer chunkify
 
-fn solid_to_luma(surface: &mut sdl2::surface::Surface) -> Result<image::ImageBuffer<image::Luma<u8>, Vec<u8>>> {
-    let (p, w, h) = (surface.pitch(), surface.width(), surface.height());
-    let mut luma_buffer = try!(surface.without_lock_mut().ok_or(ErrorKind::RLE)).to_owned();
-    for p in luma_buffer.iter_mut() {
-        //*p = !p.wrapping_sub(1); // 0 => BG => 0; 1 => FG => 255
-        *p = p.wrapping_sub(1); // 0 => BG => 255; 1 => FG => 0
-    }
-    Ok(image::imageops::crop(&mut image::ImageBuffer::from_raw(p, h, luma_buffer).unwrap(), 0, 0, w, h).to_image())
-}
-
 fn luma_to_lumaa(src: image::ImageBuffer<image::Luma<u8>, Vec<u8>>) -> image::ImageBuffer<image::LumaA<u8>, Vec<u8>> {
     //image::ImageBuffer::<image::LumaA<u8>, Vec<u8>>::from_raw(src.width(), src.height(), src.iter().cloned().flat_map(|p| vec![p, 0u8]).collect::<Vec<_>>()).unwrap()
     image::ImageBuffer::from_fn(src.width(), src.height(), |x, y| {
@@ -50,40 +41,71 @@ fn luma_to_lumaa(src: image::ImageBuffer<image::Luma<u8>, Vec<u8>>) -> image::Im
     //image::ImageBuffer::<image::LumaA<u8>, Vec<u8>>::from_vec(src.width(), src.height(), src.into_vec().into_iter().flat_map(|p| vec![p, 0u8]).collect()).unwrap()
 }
 
-pub fn render(s: String) -> Result<PngData> {
-    let text = chunkify(s, 80).concat();
-    println!("{}", text);
-    let _sdl_context = try!(sdl2::init());
-    let ttf_context = try!(sdl2_ttf::init());
-    let font = try!(ttf_context.load_font(std::path::Path::new("Anonymous Pro.ttf"), 11));
-    //font.set_hinting(std2_ttf::Hinting::None);
-    let (ws, hs): (Vec<_>, Vec<_>) = try!(text.trim().lines().map(|x| font.size_of(x)).collect::<std::result::Result<Vec<(u32, u32)>, _>>()).into_iter().unzip();
-    let (w, h) = (ws.into_iter().max().unwrap(), hs.into_iter().map(|h| std::cmp::max(h, font.recommended_line_spacing() as u32)).sum::<u32>());
-    let mut image = image::ImageBuffer::from_pixel(w, h, image::LumaA::<u8> { data: [0u8, 0u8] });
-    for (i, line) in text.trim().lines().enumerate() {
-        if try!(font.size_of(line)).0 == 0 { continue; }
-        let mut s = try!(font.render(line).solid(sdl2::pixels::Color::RGBA(0, 0, 0, 255))); // 0 => BG, 1 => FG
-        let ib = try!(solid_to_luma(&mut s));
-        image::imageops::overlay(&mut image, &luma_to_lumaa(ib), 0, (i as u32) * (font.recommended_line_spacing() as u32));
-    }
-    //for p in image.iter_mut() {
-    //    *p = !(p.wrapping_sub(1));// >> 1 << 1;
-    //}
-    //let mut image = luma_to_lumaa(image);
-    //for p in image.pixels_mut() {
-    //    p.channels_mut()[1] = p.channels()[0];//.saturating_sub(32);
-    //    //println!("{:?}", p);
-    //}
-    //let mut square = {
-    //    let l = std::cmp::max(image.width(), image.height());
-    //    image::ImageBuffer::from_pixel(l, l, image.pixels().next().unwrap().clone())
-    //};
-    //image::imageops::overlay(&mut square, &image, 0, 0);
+lazy_static!{
+    static ref FONT: rusttype::Font<'static> = {
+        let font_data = include_bytes!("../Anonymous Pro.ttf");
+        let collection = rusttype::FontCollection::from_bytes(font_data as &[u8]);
+        collection.into_font().unwrap() // only succeeds if collection consists of one font
+    };
+}
 
+fn render_one_line(input: &str) -> image::ImageBuffer<image::Luma<u8>, Vec<u8>> {
+
+    // Desired font pixel height
+    let height: f32 = 12.4;
+    let pixel_height = height.ceil() as usize;
+
+    // 2x scale in x direction to counter the aspect ratio of monospace characters.
+    let scale = rusttype::Scale { x: height*2.0, y: height };
+
+    // The origin of a line of text is at the baseline (roughly where non-descending letters sit).
+    // We don't want to clip the text, so we shift it down with an offset when laying it out.
+    // v_metrics.ascent is the distance between the baseline and the highest edge of any glyph in
+    // the font. That's enough to guarantee that there's no clipping.
+    let v_metrics = FONT.v_metrics(scale);
+    let offset = rusttype::point(0.0, v_metrics.ascent);
+
+    let glyphs: Vec<rusttype::PositionedGlyph> = FONT.layout(input, scale, offset).collect();
+
+    // Find the most visually pleasing width to display
+    let width = glyphs.iter().rev()
+        .filter_map(|g| g.pixel_bounding_box()
+                    .map(|b| b.min.x as f32 + g.unpositioned().h_metrics().advance_width))
+        .next().unwrap_or(0.0).ceil() as usize;
+
+    println!("width: {}, height: {}", width, pixel_height);
+
+    let mut pixel_data = vec![255u8; width * pixel_height];
+    for g in glyphs {
+        if let Some(bb) = g.pixel_bounding_box() {
+            g.draw(|x, y, v| {
+                let c = if v < 0.5 { 255u8 } else { 0u8 };
+                let x = x as i32 + bb.min.x;
+                let y = y as i32 + bb.min.y;
+                if x >= 0 && x < width as i32 && y >= 0 && y < pixel_height as i32 {
+                    let x = x as usize;
+                    let y = y as usize;
+                    pixel_data[(x + y * width)] = c;
+                }
+            })
+        }
+    }
+
+    return image::ImageBuffer::from_vec(width as u32, pixel_height as u32, pixel_data).expect("math error");
+}
+
+pub fn render(input: String) -> Result<PngData> {
+    let input = chunkify(input, 80).concat();
+    let rendered_lines = input.trim().lines().map(str::trim).map(render_one_line).collect::<Vec<_>>();
+    let (ws, hs) : (Vec<_>, Vec<_>) = rendered_lines.iter().map(|ib| (ib.width(), ib.height())).unzip();
+    let (w, h, lh): (u32, u32, u32) = (*ws.iter().max().unwrap(), hs.iter().sum(), *hs.iter().max().unwrap());
+    let mut image = image::ImageBuffer::from_pixel(w, h, image::LumaA::<u8> { data: [0u8, 0u8] });
+    for (i, line) in rendered_lines.into_iter().enumerate() {
+        image::imageops::overlay(&mut image, &luma_to_lumaa(line), 0, (i as u32) * (lh as u32));
+    }
     let mut png_buffer = Vec::<u8>::new();
     try!(image::png::PNGEncoder::new(&mut png_buffer).encode(&image, image.width(), image.height(), image::GrayA(8)));
-    //try!(try!(std::fs::File::create("/tmp/annx.png")).write_all(png_buffer.clone().as_slice()));
-    //panic!();
     Ok(png_buffer)
 }
+
 

@@ -142,34 +142,22 @@ impl HvZScraper {
         rb.header(h)
     }
     fn write_cookies(&mut self, res: hyper::client::response::Response) -> hyper::client::response::Response {
-        /*for j in res.headers.get::<hyper::header::Cookie>() {
-          for c in j.0.iter() {
-          self.cookiejar.remove(&c.name); self.cookiejar.insert(c.name.clone(), c.clone());
-          }
-          }
-          res*/
         //println!("Set-Cookie: {:?}", res.headers.get::<hyper::header::SetCookie>());
         res.headers.get::<hyper::header::SetCookie>().map(|j| j.0.iter().map(|c : &hyper::header::CookiePair| { self.cookiejar.remove(&c.name); self.cookiejar.insert(c.name.clone(), c.clone()) }).last()); res
     }
     fn _slurp<R: std::io::Read>(mut r: R) -> std::io::Result<String> { let mut buffer = Vec::<u8>::new(); r.read_to_end(&mut buffer).and_then(|_| Ok(String::from_utf8_lossy(&buffer).to_string())) }
     #[inline] fn slurp(res: hyper::client::response::Response) -> hyper::Result<String> { Self::_slurp(res).map_err(hyper::error::Error::Io) }
-    //fn succeed(res: hyper::client::response::Response) -> hyper::client::response::Response { assert!(res.status.is_success()); res }
     fn do_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, canfail: bool) -> Result<hyper::client::response::Response> {
         self.read_cookies(rb).send().map(|res| self.write_cookies(res)).map_err(Error::from).and_then(|res| {
             if res.status == hyper::status::StatusCode::Unregistered(509) {
                 bail!(ErrorKind::BandwidthLimitExceeded)
             }
             if res.status.is_success() || canfail { Ok(res) } else {
-                println!("NON-SLURP FAILED: {:?}", res);
+                println!("HVZ-FACING REQUEST FAILED: {:?}", res);
                 bail!(ErrorKind::HttpError(res.status))
             }
         })
     }
-    //fn do_and_slurp_with_cookies<'b>(&mut self, rb: hyper::client::RequestBuilder<'b>, read: bool, canfail: bool) -> Result<String> {
-    //    self.read_cookies(rb).send().map(|res|
-    //                                     self.write_cookies(res)).and_then(|res|
-    //                                                                       if res.status.is_success() || canfail { if read { Self::slurp(res) } else { Ok(String::new()) } } else { println!("SLURP FAILED: {:?}", res); bail!(ErrorKind::HttpError(res.status)) }).map_err(From::from)
-    //}
     fn _redirect_url(res: &hyper::client::response::Response) -> Option<url::Url> {
         match res.headers.get::<hyper::header::Location>() { Some(&hyper::header::Location(ref loc)) => { res.url.join(loc).ok() }, _ => None }
     }
