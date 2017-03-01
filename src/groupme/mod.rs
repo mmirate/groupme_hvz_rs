@@ -178,6 +178,7 @@ impl Group {
         Ok(groups)
     }
     pub fn destroy(self) -> std::result::Result<(), (Self, Error)> { Ok(try!(self::api::Groups::destroy(&self.group_id).map(|_| ()).map_err(|e| (self, e)))) }
+    pub fn change_owners(&mut self, new_owner: &Member) -> Result<()> { let r = Ok(try!(self::api::Groups::change_owners(&self.group_id, &new_owner.user_id))); try!(self.refresh()); r }
     pub fn refresh(&mut self) -> Result<Self> { let id = self.id.clone(); Ok(std::mem::replace(self, try!(Self::decode(&mut rustc_serialize::json::Decoder::new(try!(self::api::Groups::show(id.as_str()))))))) }
     pub fn get(id: &str) -> Result<Self> { Ok(try!(Self::decode(&mut rustc_serialize::json::Decoder::new(try!(self::api::Groups::show(id)))))) }
     pub fn update(&mut self, name: Option<String>, description: Option<String>, image_url: Option<String>, share: Option<bool>) -> Result<Self> { try!(self::api::Groups::update(&self.group_id, &self::api::GroupsUpdateReqEnvelope { name: name, description: description, image_url: image_url, share: share })); self.refresh() }

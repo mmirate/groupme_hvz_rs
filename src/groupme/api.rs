@@ -96,6 +96,22 @@ impl Groups {
         let u = Self::build_url(vec![group_id, "destroy"]);
         empty_response(client!().post(u.as_str()).send())
     }
+    pub fn change_owners(group_id: &str, owner_id: &str) -> Result<()> {
+        // GroupMe. Seriously?! You had to add a single endpoint with its *entire semantics* being snowflake-special?! For shame.
+        let u = Self::build_url(vec!["change_owners"]);
+        let mut o = std::collections::BTreeMap::new();
+        o.insert("group_id".to_owned(), Json::String(group_id.to_owned()));
+        o.insert("owner_id".to_owned(), Json::String(owner_id.to_owned()));
+        let r = client!().post(u.as_str()).body(&rustc_serialize::json::encode(&Json::Array(vec![Json::Object(o)])).unwrap()).header(json_type()).send();
+        let j = try!(Json::from_reader(&mut try!(_empty_response(r))));
+        let mut o = match j { Json::Object(m) => m, _ => { return Err(rustc_serialize::json::DecoderError::MissingFieldError("top-lvl is no object".to_string()).into()); } };
+        let mut a = match o.remove("results") { Some(Json::Array(x)) => x, _ => { return Err(rustc_serialize::json::DecoderError::MissingFieldError("no response".to_string()).into()); } };
+        let mut o = match a.pop() { Some(Json::Object(x)) => x, _ => { return Err(rustc_serialize::json::DecoderError::MissingFieldError("no response".to_string()).into()); } };
+        match (o.remove("owner_id"), o.remove("group_id"), o.remove("status")) {
+            (Some(Json::String(ref x1)), Some(Json::String(ref x2)), Some(Json::String(ref x3))) if (x1.as_str(), x2.as_str(), x3.as_str()) == (owner_id, group_id, "200") => { Ok(()) },
+            _ => Err(rustc_serialize::json::DecoderError::UnknownVariantError("ownership change failed".to_string()).into())
+        }
+    }
 }
 
 #[derive(Debug, Eq, Hash, Ord, PartialOrd, PartialEq, RustcDecodable, RustcEncodable)] pub struct MemberId { pub user_id: String, pub nickname: String, }
