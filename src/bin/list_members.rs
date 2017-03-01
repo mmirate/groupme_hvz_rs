@@ -1,5 +1,7 @@
+#[macro_use] extern crate lazy_static;
 extern crate rustc_serialize;
 extern crate clap;
+extern crate regex;
 extern crate groupme_hvz_rs;
 use groupme_hvz_rs::*;
 use groupme_hvz_rs::errors::*;
@@ -15,8 +17,7 @@ quick_main!(|| -> Result<()> {
     let mut members = try!(groupme::Group::get(matches.value_of("GROUPID").unwrap())).members.clone();
     members.sort_by(|a, b| a.nickname.cmp(&b.nickname));
     for m in members {
-        let mut words_it = m.nickname.split_whitespace();
-        println!("{:?} /* {} {} */,", m.user_id, words_it.next().unwrap_or(""), words_it.last().unwrap_or(""));
+        println!("{:?} /* {} */,", m.user_id, m.canonical_name());
     }
     Ok(())
 });

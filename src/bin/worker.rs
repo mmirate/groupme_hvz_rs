@@ -23,13 +23,14 @@ fn main() {
         .get_matches();
     let (mut factiongroup, mut cncgroup) = (None, None);
     {
+        let me = groupme::User::get().unwrap();
         let groupname = |varname: &'static str| std::env::var(varname).unwrap().to_string();
         let mut allgroups = groupme::Group::list().unwrap();
         allgroups.sort_by(|a, b| a.members.len().cmp(&b.members.len()));
         while let Some(g) = allgroups.pop() {
-            if factiongroup.is_none() && g.name == groupname("FACTION_GROUP_NAME") {
+            if factiongroup.is_none() && g.name == groupname("FACTION_GROUP_NAME") && g.members.len() > 2 || g.creator_user_id == me.user_id {
                 std::mem::replace(&mut factiongroup, Some(g));
-            } else if cncgroup.is_none() && g.name == groupname("CNC_GROUP_NAME") && g.members.len() == 1 {
+            } else if cncgroup.is_none() && g.name == groupname("CNC_GROUP_NAME") && g.members.len() == 1 && g.creator_user_id == me.user_id {
                 std::mem::replace(&mut cncgroup, Some(g));
             } else if factiongroup.is_some() && cncgroup.is_some() { break; }
         }

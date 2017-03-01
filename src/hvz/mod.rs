@@ -130,6 +130,19 @@ impl Panel { pub fn from_div<'a>(div: scraper::ElementRef<'a>) -> Result<Panel> 
     })
 } }
 
+pub trait KillboardExt {
+    fn surname(name: &str) -> &str;
+    fn name_has_ambiguous_surname(&self, fullname: &str) -> bool;
+}
+
+impl KillboardExt for Killboard {
+    fn surname(name: &str) -> &str { name.split_whitespace().last().unwrap_or("") }
+    fn name_has_ambiguous_surname(&self, fullname: &str) -> bool {
+        let needle = Self::surname(fullname);
+        self.values().map(|players| players.iter().find(|p| needle.to_lowercase() == Self::surname(&p.playername).to_lowercase() && p.playername != fullname)).find(Option::is_some).is_some()
+    }
+}
+
 type MyCookieJar = BTreeMap<String, hyper::header::CookiePair>;
 
 #[derive(Clone, Debug)] pub struct HvZScraper { cookiejar: MyCookieJar, last_login: std::time::Instant, username: String, password: String }

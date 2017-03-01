@@ -6,6 +6,7 @@ extern crate multipart;
 extern crate openssl;
 extern crate postgres;
 extern crate rand;
+extern crate regex;
 extern crate rustc_serialize;
 extern crate rusttype;
 extern crate scraper;
@@ -165,7 +166,7 @@ pub mod periodic {
 
 pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     use std;                 // *500 LOC later*: that.
-    use hvz;
+    use hvz::{self, KillboardExt};
     use hvz_syncer;
     use groupme_syncer;
     extern crate chrono;
@@ -180,7 +181,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     use std::convert::Into;
     use std::iter::FromIterator;
     use errors::*;
-    extern crate regex;
+    use regex;
 
     fn nll(items: Vec<&str>, postlude: Option<&str>) -> String {
         if let Some((tail, init)) = items.split_last() {
@@ -229,7 +230,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             match self {
                 &BotRole::VoxPopuli => "If certain people start your message with \"@Everyone\" or \"@everyone\" while I'm still alive, I'll repost it in such a way that it will mention everyone. Abuse this, and there will be consequences.".to_string(),
                 &BotRole::Chat(f) => format!("I'm the voice of {} chat. When someone posts something there, I'll tell you about it within a few seconds.{}", f, if f == hvz::Faction::General { " Except during gameplay hours, because spam is bad." } else { "" }),
-                &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within about a minute.".to_string(),
+                &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within about a minute, and simultaneously try to go about kicking them. If I can't, I'll give a holler.".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Whenever someone signs up, I'll report it here.".to_string(),
                 &BotRole::Killboard(_) => "ERROR: UNKNOWN BOT".to_string(),
                 &BotRole::Panel(hvz::PanelKind::Mission) => "If a mission arises, I'll contact you.".to_string(),
@@ -514,9 +515,9 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         continue;
                     }
                     if self.state.dormant { continue; }
-                    let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
                     match self.bots.get(&role) {
                         Some(ref bot) => {
+                            let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
                             let m = match new_members.iter().map(|p| p.kb_playername.clone()).collect::<Option<Vec<String>>>() {
                                 Some(perpetrators) => role.phrase_2(nll(new_member_names, None).as_str(), nll(perpetrators.iter().map(AsRef::as_ref).collect(), ", resp.".into()).as_str()),
                                 None => role.phrase(nll(new_member_names, None).as_str())
@@ -526,6 +527,45 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                                         None //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
                                         )); },
                         None => { println!("HOLY S*** I JUST ATE SOME DATA!") }
+                    }
+                    if faction == hvz::Faction::Zombie { // redundant conditional; keep it in case it becomes non-redundant
+                        try!(self.factionsyncer.group.refresh());
+                        let (mut removals, mut removalfailures) = (vec![], vec![]);
+                        'player: for zombie_player in new_members {
+                            for member in self.factionsyncer.group.members.iter() {
+                                if member.canonical_name().to_lowercase() == zombie_player.playername.to_lowercase() {
+                                    removals.push((zombie_player, member.to_owned()));
+                                    continue 'player;
+                                }
+                            }
+                            if self.hvz.killboard.name_has_ambiguous_surname(&zombie_player.playername) {
+                                removalfailures.push(zombie_player);
+                                continue 'player;
+                            }
+                            for member in self.factionsyncer.group.members.iter() {
+                                if hvz::Killboard::surname(&member.canonical_name()).to_lowercase() == hvz::Killboard::surname(&zombie_player.playername).to_lowercase() {
+                                    removals.push((zombie_player, member.to_owned()));
+                                    continue 'player;
+                                }
+                            }
+                            removalfailures.push(zombie_player);
+                            continue 'player;
+                        }
+                        for (death, removal) in removals.into_iter() {
+                            match self.factionsyncer.group.remove_mut(removal) {
+                                Ok(_) => {},
+                                Err(_) => { removalfailures.push(death); }
+                            }
+                        }
+                        if !removalfailures.is_empty() {
+                            match self.bots.get(&role) {
+                                Some(ref bot) => {
+                                    let names = removalfailures.into_iter().map(|p| p.playername).collect::<Vec<_>>();
+                                    try!(bot.post(format!("DANGER! Of those deaths, I failed to kick {}.", nll(names.iter().map(|ref s| s.as_str()).collect::<Vec<_>>(), None)), None));
+                                },
+                                None => { println!("HOLY S*** I JUST ATE SOME VERY IMPORTANT DATA!") }
+                            }
+                        }
                     }
                 }
             }

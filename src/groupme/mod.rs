@@ -1,8 +1,9 @@
-use hyper;
 use std;
 use std::fmt::Debug;
 use rustc_serialize;
 use rustc_serialize::{Decodable/*,Encodable*/};
+use hyper;
+use regex;
 use render;
 mod api;
 
@@ -154,6 +155,24 @@ impl Recipient<self::api::DirectMessages> for Member { #[inline] fn id(&self) ->
 impl BidirRecipient<self::api::DirectMessages> for Member {}
 
 impl From<Member> for self::api::MemberId { fn from(m: Member) -> self::api::MemberId { self::api::MemberId { user_id: m.user_id, nickname: m.nickname } } }
+impl Member {
+    pub fn canonical_name_of(name: &str) -> String {
+        lazy_static! {
+            static ref CALLSIGN : regex::Regex = regex::Regex::new(r#" *"[^"]+?" *"#).unwrap();
+            static ref MATT : regex::Regex = regex::Regex::new("🖕").unwrap();
+        }
+        let name = MATT.replace(&name, "Matthew Zilvetti");
+        let name = CALLSIGN.replace(&name, " ");
+        let mut words_it = name.split_whitespace();
+        let mut words = vec![];
+        if let Some(first) = words_it.next() { words.push(first); }
+        if let Some(last) = words_it.last() { words.push(last); }
+        words.join(" ")
+    }
+    pub fn canonical_name(&self) -> String {
+        Self::canonical_name_of(&self.nickname)
+    }
+}
 
 fn unwrap<T,E: Debug>(r: std::result::Result<T,E>) -> T { r.unwrap() }
 
