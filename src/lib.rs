@@ -458,7 +458,18 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             }
             let new_messages = try!(self.factionsyncer.update_messages());
             println!("new_messages.len() = {:?}", new_messages.len());
+            let me = try!(groupme::User::get());
             for message in new_messages {
+                if format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' }, "")).collect::<Vec<String>>().join(" ")).contains(" im dead ") {
+                    if !([&self.factionsyncer.group.creator_user_id, &me.user_id].contains(&&message.user_id)) {
+                        if let Some(member) = self.factionsyncer.group.members.iter().find(|&m| m.user_id == message.user_id) {
+                            if let Err(_) = self.factionsyncer.group.remove(member.clone()) {
+                                //try!(self.factionsyncer.group.post("... I guess they already got kicked?".to_owned(), None).map(|_| ())) // Actually, we don't care about this.
+                            }
+                        }
+                        try!(self.factionsyncer.group.refresh());
+                    }
+                }
                 if self.state.dormant { continue; }
                 if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
                     if ALLOWED_MESSAGEBLASTERS.contains(message.user_id.as_str()) {
@@ -482,15 +493,6 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             ));
                             //try!(self.hvz.scraper.post_chat(hvz::Faction::Human, format!("@admins {} from GroupMe says, {:?}.", message.name, m).as_str()));
                         }
-                    }
-                } else if format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' }, "")).collect::<Vec<String>>().join(" ")).contains(" im dead ") {
-                    if message.user_id != self.factionsyncer.group.creator_user_id {
-                        if let Some(member) = self.factionsyncer.group.members.iter().find(|&m| m.user_id == message.user_id) {
-                            if let Err(_) = self.factionsyncer.group.remove(member.clone()) {
-                                try!(self.factionsyncer.group.post("... I guess they already got kicked?".to_owned(), None).map(|_| ()))
-                            }
-                        }
-                        try!(self.factionsyncer.group.refresh());
                     }
                 }
             }
