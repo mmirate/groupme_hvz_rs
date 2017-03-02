@@ -18,5 +18,5 @@
     "web": { "quantity": 1, "size": "free" },
     "worker": { "quantity": 1, "size": "free" }
   },
-  "addons": [ "heroku-postgresql:hobby-dev", "logentries" ]
+  "addons": [ "heroku-postgresql:hobby-dev" ]
 }

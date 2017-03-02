@@ -35,7 +35,8 @@ fn luma_to_lumaa(src: image::ImageBuffer<image::Luma<u8>, Vec<u8>>) -> image::Im
     //image::ImageBuffer::<image::LumaA<u8>, Vec<u8>>::from_raw(src.width(), src.height(), src.iter().cloned().flat_map(|p| vec![p, 0u8]).collect::<Vec<_>>()).unwrap()
     image::ImageBuffer::from_fn(src.width(), src.height(), |x, y| {
         let mut p = src.get_pixel(x,y).to_luma_alpha();
-        p.channels_mut()[1] = p.channels()[0];//.saturating_sub(32);
+        p.channels_mut()[1] = !p.channels()[0];//.saturating_sub(32);
+        //p.channels_mut()[1] = 255u8;
         p
     })
     //image::ImageBuffer::<image::LumaA<u8>, Vec<u8>>::from_vec(src.width(), src.height(), src.into_vec().into_iter().flat_map(|p| vec![p, 0u8]).collect()).unwrap()
@@ -52,11 +53,10 @@ lazy_static!{
 fn render_one_line(input: &str) -> image::ImageBuffer<image::Luma<u8>, Vec<u8>> {
 
     // Desired font pixel height
-    let height: f32 = 12.4;
+    let height: f32 = 14.66666666;
     let pixel_height = height.ceil() as usize;
 
-    // 2x scale in x direction to counter the aspect ratio of monospace characters.
-    let scale = rusttype::Scale { x: height*2.0, y: height };
+    let scale = rusttype::Scale { x: height, y: height };
 
     // The origin of a line of text is at the baseline (roughly where non-descending letters sit).
     // We don't want to clip the text, so we shift it down with an offset when laying it out.
@@ -79,7 +79,7 @@ fn render_one_line(input: &str) -> image::ImageBuffer<image::Luma<u8>, Vec<u8>> 
     for g in glyphs {
         if let Some(bb) = g.pixel_bounding_box() {
             g.draw(|x, y, v| {
-                let c = if v < 0.5 { 255u8 } else { 0u8 };
+                let c = !((v * 250.0).ceil() as u8);
                 let x = x as i32 + bb.min.x;
                 let y = y as i32 + bb.min.y;
                 if x >= 0 && x < width as i32 && y >= 0 && y < pixel_height as i32 {
@@ -99,7 +99,7 @@ pub fn render(input: String) -> Result<PngData> {
     let rendered_lines = input.trim().lines().map(str::trim).map(render_one_line).collect::<Vec<_>>();
     let (ws, hs) : (Vec<_>, Vec<_>) = rendered_lines.iter().map(|ib| (ib.width(), ib.height())).unzip();
     let (w, h, lh): (u32, u32, u32) = (*ws.iter().max().unwrap(), hs.iter().sum(), *hs.iter().max().unwrap());
-    let mut image = image::ImageBuffer::from_pixel(w, h, image::LumaA::<u8> { data: [0u8, 0u8] });
+    let mut image = image::ImageBuffer::from_pixel(w, h, image::LumaA::<u8> { data: [255u8, 0u8] });
     for (i, line) in rendered_lines.into_iter().enumerate() {
         image::imageops::overlay(&mut image, &luma_to_lumaa(line), 0, (i as u32) * (lh as u32));
     }

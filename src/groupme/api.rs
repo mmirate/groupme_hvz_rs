@@ -34,7 +34,15 @@ fn empty_response(r: hyper::Result<hyper::client::response::Response>) -> Result
 fn response(r: hyper::Result<hyper::client::response::Response>, key: &'static str) -> Result<Json> {
     let j = try!(Json::from_reader(&mut try!(_empty_response(r))));
     let mut o = match j { Json::Object(m) => m, _ => { return Err(rustc_serialize::json::DecoderError::MissingFieldError("top-lvl is no object".to_string()).into()); } };
+    match o.remove("status") { Some(Json::I64(200)) | Some(Json::U64(200)) | Some(Json::F64(200.0)) | None => {}, x => { return Err(rustc_serialize::json::DecoderError::MissingFieldError(format!("response indicated an error; status: {:?}", x)).into()) } }
     match o.remove(key) { Some(x) => Ok(x), _ => Err(rustc_serialize::json::DecoderError::MissingFieldError("no response".to_string()).into()) }
+} // key="response" -> key="payload" for Image API. It's short-bus-special like that.
+
+fn null_response(r: hyper::Result<hyper::client::response::Response>, key: &'static str) -> Result<()> {
+    let j = try!(Json::from_reader(&mut try!(_empty_response(r))));
+    let mut o = match j { Json::Object(m) => m, _ => { return Err(rustc_serialize::json::DecoderError::MissingFieldError("top-lvl is no object".to_string()).into()); } };
+    match o.remove("status") { Some(Json::I64(200)) | Some(Json::U64(200)) | Some(Json::F64(200.0)) | None => {}, x => { return Err(rustc_serialize::json::DecoderError::MissingFieldError(format!("response indicated an error; status: {:?}", x)).into()) } }
+    match o.remove(key) { Some(Json::Null) | None => Ok(()), _ => Err(rustc_serialize::json::DecoderError::MissingFieldError("response given when none expected".to_string()).into()) }
 } // key="response" -> key="payload" for Image API. It's short-bus-special like that.
 
 #[inline] fn url_extend<I>(mut u: url::Url, segments: I) -> url::Url where I: IntoIterator, I::Item: AsRef<str> { u.path_segments_mut().unwrap().extend(segments); u }
@@ -46,7 +54,7 @@ pub trait Endpoint {
 }
 
 #[derive(RustcEncodable)] pub struct GroupsCreateReqEnvelope { pub name: String, pub description: Option<String>, pub image_url: Option<String>, pub share: Option<bool> }
-#[derive(RustcEncodable)] pub struct GroupsUpdateReqEnvelope { pub name: Option<String>, pub description: Option<String>, pub image_url: Option<String>, pub share: Option<bool> }
+//#[derive(RustcEncodable)] pub struct GroupsUpdateReqEnvelope { pub name: Option<String>, pub description: Option<String>, pub image_url: Option<String>, pub share: Option<bool> }
 
 pub struct Groups;
 impl Endpoint for Groups { #[inline] fn base_url() -> url::Url { url_extend(url::Url::parse(API_URL).unwrap(), &["groups"]) } }
@@ -75,23 +83,21 @@ impl Groups {
     //    }
     //    response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send(), "response")
     //}
-    pub fn update(group_id: &str, params: &GroupsUpdateReqEnvelope) -> Result<Json> {
-        let u = Self::build_url(vec![group_id, "update"]);
-        response(client!().post(u.as_str()).body(&try!(rustc_serialize::json::encode(params))).header(json_type()).send(), "response")
-    }
-    //pub fn oldupdate(group_id: &str, name: Option<String>, description: Option<String>, image_url: Option<String>, share: Option<bool>) -> Result<Json> {
+    //pub fn _dnw_update(group_id: &str, params: &GroupsUpdateReqEnvelope) -> Result<Json> {
     //    let u = Self::build_url(vec![group_id, "update"]);
-    //    let mut o = Json::Object(std::collections::BTreeMap::new());
-    //    {
-    //        let ref mut o = o;
-    //        let mut m = o.as_object_mut().unwrap(); // YES THIS NEEDS TO BE MUTABLE FFS
-    //        name.map(|s| m.insert("name".to_string(), Json::String(s)));
-    //        description.map(|s| m.insert("description".to_string(), Json::String(s)));
-    //        image_url.map(|s| m.insert("image_url".to_string(), Json::String(s)));
-    //        share.map(|b| m.insert("share".to_string(), Json::Boolean(b)));
-    //    }
-    //    response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send(), "response")
+    //    response(client!().post(u.as_str()).body(&try!(rustc_serialize::json::encode(params))).header(json_type()).send(), "response")
     //}
+    pub fn update(group_id: &str, name: Option<String>, description: Option<String>, image_url: Option<String>, share: Option<bool>) -> Result<Json> {
+        let u = Self::build_url(vec![group_id, "update"]);
+        let mut o = std::collections::BTreeMap::new();
+        {
+            name.map(|s| o.insert("name".to_string(), Json::String(s)));
+            description.map(|s| o.insert("description".to_string(), Json::String(s)));
+            image_url.map(|s| o.insert("image_url".to_string(), Json::String(s)));
+            share.map(|b| o.insert("share".to_string(), Json::Boolean(b)));
+        }
+        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&Json::Object(o)).unwrap()).header(json_type()).send(), "response")
+    }
     pub fn destroy(group_id: &str) -> Result<()> {
         let u = Self::build_url(vec![group_id, "destroy"]);
         empty_response(client!().post(u.as_str()).send())
@@ -264,11 +270,11 @@ impl Endpoint for Likes { #[inline] fn base_url() -> url::Url { url_extend(url::
 impl Likes {
     pub fn create(conversation_id: &str, message_id: &str) -> Result<()> {
         let u = Self::build_url(vec![conversation_id, message_id, "like"]);
-        empty_response(client!().post(u.as_str()).send())
+        null_response(client!().post(u.as_str()).send(), "response")
     }
     pub fn destroy(conversation_id: &str, message_id: &str) -> Result<()> {
         let u = Self::build_url(vec![conversation_id, message_id, "unlike"]);
-        empty_response(client!().post(u.as_str()).send())
+        null_response(client!().post(u.as_str()).send(), "response")
     }
 }
 
@@ -290,7 +296,7 @@ impl MessageEndpoint for Bots {
             m.insert("bot_id".to_string(), Json::String(bot_id.to_string()));
             m.insert("text".to_string(), Json::String(text));
             m.insert("picture_url".to_string(), Json::Null);
-            m.insert("attachments".to_string(), Json::Array(attachments));
+            m.insert("attachments".to_string(), Json::Array(attachments.into_iter().filter(|a| !a.is_null()).collect()));
         }
         empty_response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send()).map(|()| Json::Null)
     }
@@ -300,8 +306,13 @@ impl Bots {
         let u = Self::build_url(Vec::<&str>::new());
         response(client!().get(u.as_str()).send(), "response")
     }
-    pub fn create(params: BotsCreateReqEnvelope) -> Result<Json> {
+    pub fn create(mut params: BotsCreateReqEnvelope) -> Result<Json> {
         let u = Self::build_url(Vec::<&str>::new());
+        if params.callback_url.is_none() {
+            let mut example_com = url::Url::parse("http://example.com").unwrap();
+            example_com.set_fragment(Some(params.name.as_str()));
+            std::mem::replace(&mut params.callback_url, Some(example_com.into_string()));
+        }
         //let mut o = Json::Object(std::collections::BTreeMap::new());
         //o.as_object_mut().unwrap().insert("bot".to_string(), Json::Object(std::collections::BTreeMap::new()));
         //{

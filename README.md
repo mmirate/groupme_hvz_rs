@@ -40,7 +40,7 @@ Click this button:
 
 [![Deploy](https://www.herokucdn.com/deploy/button.png)](https://heroku.com/deploy)
 
-... and fill out the form with the information needed to deploy a copy of this program onto Heroku. Once you've clicked the big purple "Deploy" button, grab a donut or something while the program compiles. Finally, after completion, click the "View" button for further instructions.
+... and fill out the form with the information needed to deploy a copy of this program onto Heroku. Once you've clicked the big purple "Deploy" button at the bottom of that page, grab a donut or something while the program compiles. Finally, after completion, click the "View" button for further instructions.
 
 When the program first runs, it will probably create a new Group for you; do *not* add anyone else to it, as it is used for you to command and control your instance of the program.
 

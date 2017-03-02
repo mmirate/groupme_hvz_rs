@@ -59,6 +59,10 @@ pub mod errors {
             BandwidthLimitExceeded { // code 509
                 description("Georgia Tech website bandwidth limit exceeded.")
             }
+            AteData(role: ::conduit_to_groupme::BotRole) {
+                description("A bot could not be found.")
+                display("Bot {:?} not found.", role)
+            }
         }
     }
 }
@@ -95,18 +99,18 @@ pub mod hvz_syncer {
             me
         }
         pub fn update_killboard(&mut self) -> Result<Changes<hvz::Killboard>> {
-            let (killboard, additions, deletions) = try!(syncer::update_map(&self.conn, "killboard", try!(self.scraper.fetch_killboard()), &self.killboard, true));
+            let (killboard, additions, deletions) = try!(syncer::update_map(&self.conn, "killboard", try!(self.scraper.fetch_killboard()), &mut self.killboard, true));
             self.killboard = killboard;
             Ok((additions, deletions))
         }
         #[inline] pub fn new_zombies(&mut self) -> Result<Vec<hvz::Player>> { Ok(try!(self.update_killboard()).0.remove(&hvz::Faction::Human).unwrap_or(vec![])) }
         pub fn update_chatboard(&mut self) -> Result<Changes<hvz::Chatboard>> {
-            let (chatboard, additions, deletions) = try!(syncer::update_map(&self.conn, "chatboard", try!(self.scraper.fetch_chatboard()), &self.chatboard, true));
+            let (chatboard, additions, deletions) = try!(syncer::update_map(&self.conn, "chatboard", try!(self.scraper.fetch_chatboard()), &mut self.chatboard, true));
             self.chatboard = chatboard;
             Ok((additions, deletions))
         }
         pub fn update_panelboard(&mut self) -> Result<Changes<hvz::Panelboard>> {
-            let (panelboard, additions, deletions) = try!(syncer::update_map(&self.conn, "panelboard", try!(self.scraper.fetch_panelboard()), &self.panelboard, false));
+            let (panelboard, additions, deletions) = try!(syncer::update_map(&self.conn, "panelboard", try!(self.scraper.fetch_panelboard()), &mut self.panelboard, false));
             self.panelboard = panelboard;
             Ok((additions, deletions))
         }
@@ -199,7 +203,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         }
     }
 
-    #[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)] enum BotRole { VoxPopuli, Chat(hvz::Faction), Killboard(hvz::Faction), Panel(hvz::PanelKind) }
+    #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] pub enum BotRole { VoxPopuli, Chat(hvz::Faction), Killboard(hvz::Faction), Panel(hvz::PanelKind) }
     impl BotRole {
         fn nickname(&self) -> String {
             match self {
@@ -228,7 +232,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         }
         fn watdo(&self) -> String {
             match self {
-                &BotRole::VoxPopuli => "If certain people start your message with \"@Everyone\" or \"@everyone\" while I'm still alive, I'll repost it in such a way that it will mention everyone. Abuse this, and there will be consequences.".to_string(),
+                &BotRole::VoxPopuli => "If certain people start your message with \"@Everyone\" or \"@everyone\", I'll repost it in such a way that it will mention everyone. Abuse this, and there will be consequences.".to_string(),
                 &BotRole::Chat(f) => format!("I'm the voice of {} chat. When someone posts something there, I'll tell you about it within a few seconds.{}", f, if f == hvz::Faction::General { " Except during gameplay hours, because spam is bad." } else { "" }),
                 &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within about a minute, and simultaneously try to go about kicking them. If I can't, I'll give a holler.".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Whenever someone signs up, I'll report it here.".to_string(),
@@ -297,7 +301,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     #[derive(RustcDecodable, RustcEncodable)] struct RuntimeState { missions: bool, annxs: bool, dormant: bool, throttled_at: i64 }
     impl RuntimeState {
         fn write(&self, cncgroup: &mut groupme::Group) -> Result<()> {
-            cncgroup.update(None, "dormant".to_string().into(), None, None).map(|_| ())
+            cncgroup.update(None, try!(rustc_serialize::json::encode(&self)).into(), None, None).map(|_| ())
         }
     }
     impl Default for RuntimeState { fn default() -> Self { RuntimeState { missions: false, annxs: false, dormant: true, throttled_at: 0i64 } } }
@@ -340,7 +344,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     }
                 }
             }
-            try!(self.factionsyncer.group.post("Two more things. (1) If you start your message with \"@Human Chat\" or \"@General Chat\" while I'm still alive, I'll repost it to the requested HvZ website chat.".to_string(), None));
+            try!(self.factionsyncer.group.post("Two more things. (1) If you start your message with \"@Human Chat\" or \"@General Chat\", I'll repost it to the requested HvZ website chat.".to_string(), None));
             std::thread::sleep(std::time::Duration::from_secs(3));
             try!(self.factionsyncer.group.post("(2) If your message includes the two words \"I'm dead\" adjacently and in that order, but without the doublequotes and regardless of capitalization or non-doublequote punctuation ... I will kick you from the Group within a few seconds.".to_string(), None));
             std::thread::sleep(std::time::Duration::from_secs(3));
@@ -457,18 +461,22 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 "21815306" /* Sriram Ganesan */,
                 ]);
             }
+            let (hour, _minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
             let new_messages = try!(self.factionsyncer.update_messages());
             println!("new_messages.len() = {:?}", new_messages.len());
             let me = try!(groupme::User::get());
             for message in new_messages {
-                if format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' }, "")).collect::<Vec<String>>().join(" ")).contains(" im dead ") {
-                    if !([&self.factionsyncer.group.creator_user_id, &me.user_id].contains(&&message.user_id)) {
-                        if let Some(member) = self.factionsyncer.group.members.iter().find(|&m| m.user_id == message.user_id) {
-                            if let Err(_) = self.factionsyncer.group.remove(member.clone()) {
-                                //try!(self.factionsyncer.group.post("... I guess they already got kicked?".to_owned(), None).map(|_| ())) // Actually, we don't care about this.
+                if 7 <= hour && hour < 23 {
+                    let signature = format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' && c != '?' }, "")).collect::<Vec<String>>().join(" "));
+                    if signature.contains(" im dead ") || signature.contains(" i am dead ") {
+                        if !([&self.factionsyncer.group.creator_user_id, &me.user_id].contains(&&message.user_id)) {
+                            if let Some(member) = self.factionsyncer.group.members.iter().find(|&m| m.user_id == message.user_id) {
+                                if let Err(_) = self.factionsyncer.group.remove(member.clone()) {
+                                    //try!(self.factionsyncer.group.post("... I guess they already got kicked?".to_owned(), None).map(|_| ())) // Actually, we don't care about this.
+                                }
                             }
+                            try!(self.factionsyncer.group.refresh());
                         }
-                        try!(self.factionsyncer.group.refresh());
                     }
                 }
                 if self.state.dormant { continue; }
@@ -503,7 +511,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         fn process_killboard(&mut self, i: usize) -> Result<()> {
             let (hour, _minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
             if 2 < hour && hour < 7 { return Ok(()); }
-            if i % 5 == 0 {
+            if i % 8 == 0 {
                 let (additions, _deletions) = try!(self.hvz.update_killboard());
                 for (faction, new_members) in additions.into_iter() {
                     if new_members.is_empty() { continue; }
@@ -526,7 +534,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             try!(bot.post(m,
                                         None //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
                                         )); },
-                        None => { println!("HOLY S*** I JUST ATE SOME DATA!") }
+                        None => { bail!(ErrorKind::AteData(role)) }
                     }
                     if faction == hvz::Faction::Zombie { // redundant conditional; keep it in case it becomes non-redundant
                         try!(self.factionsyncer.group.refresh());
@@ -563,7 +571,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                                     let names = removalfailures.into_iter().map(|p| p.playername).collect::<Vec<_>>();
                                     try!(bot.post(format!("DANGER! Of those deaths, I failed to kick {}.", nll(names.iter().map(|ref s| s.as_str()).collect::<Vec<_>>(), None)), None));
                                 },
-                                None => { println!("HOLY S*** I JUST ATE SOME VERY IMPORTANT DATA!") }
+                                None => { bail!(ErrorKind::AteData(role)) }
                             }
                         }
                     }
@@ -573,20 +581,22 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         }
 
         fn process_panelboard(&mut self, i: usize) -> Result<()> {
-            let (_hour, minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
-            if (15 - ((minute as i32)%30)).abs() >= 12 && i % 4 == 0 /*i % 6 == 1*/ {
+            let (hour, minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
+            if 2 < hour && hour < 7 { return Ok(()); }
+            if (15 - ((minute as i32)%30)).abs() >= 12 && i % 4 == 2 /*i % 6 == 1*/ {
                 let (additions, _deletions) = try!(self.hvz.update_panelboard());
                 for (kind, new_panels) in additions.into_iter() {
                     if kind == hvz::PanelKind::Announcement && !self.state.annxs { continue; }
                     if kind == hvz::PanelKind::Mission && !self.state.missions { continue; }
                     if self.state.dormant { continue; }
+                    if new_panels.is_empty() { continue; }
                     let role = BotRole::Panel(kind);
                     match self.bots.get(&role) {
                         Some(ref bot) => for panel in new_panels.into_iter() {
                             if kind == hvz::PanelKind::Mission && panel.particulars.map(|p| (p.start - chrono::Local::now()).num_minutes()).map(|m| m > 65 || m < 15).unwrap_or(true) { continue; } // only post about missions that are actually upcoming
                             try!(bot.post_or_post_image(format!("{: <2$}\n{}", role.phrase(panel.title.as_str()), panel.text, self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()])));
                         },
-                        None => { println!("HOLY S*** I JUST ATE SOME DATA!") }
+                        None => { bail!(ErrorKind::AteData(role)) }
                     }
                 }
             }
@@ -595,15 +605,17 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 
         fn process_chatboard(&mut self, i: usize) -> Result<()> {
             let (hour, _minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
-            if i % 4 == 1 || (self.state.dormant && i % 2 == 1) {
+            if 2 < hour && hour < 7 { return Ok(()); }
+            if i % 8 == 1 || (!self.state.dormant && i % 4 == 1) {
                 let (additions, _deletions) = try!(self.hvz.update_chatboard());
                 for (faction, new_messages) in additions.into_iter() {
-                    if faction == hvz::Faction::General && 7 < hour && hour < 23 { continue; }
+                    if new_messages.is_empty() { continue; }
+                    if faction == hvz::Faction::General && 7 <= hour && hour < 23 { continue; }
                     if self.state.dormant { continue; }
                     let role = BotRole::Chat(faction);
                     match self.bots.get(&role) {
                         Some(ref bot) => for message in new_messages.into_iter() { try!(bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)); },
-                        None => { println!("HOLY S*** I JUST ATE SOME DATA!") }
+                        None => { bail!(ErrorKind::AteData(role)) }
                     }
                 }
             }
@@ -612,14 +624,16 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 
         fn being_throttled(&mut self, e: Result<()>) -> Result<()> {
             let now = chrono::Local::now().timestamp();
-            if now - self.state.throttled_at < 60*10 { e } else {
+            if now - self.state.throttled_at < 60*15 { e } else {
                 self.state.throttled_at = now;
                 let mut it = self.bots.iter();
                 if let Some((_, bot)) = it.next() {
-                    let mut ret = vec![];
-                    ret.push(e);
-                    ret.push(bot.post("Ouch. We're being throttled. Going off-line for a few minutes. Please check the killboard while we're gone!".to_owned(), None).map(|_| ())); // TODO ping someone here
-                    ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ())
+                    if self.state.dormant { e } else {
+                        let mut ret = vec![];
+                        ret.push(e);
+                        ret.push(bot.post("Ouch. We're being throttled, so we have to go down for 15 minutes. Please check the killboard while we're gone!".to_owned(), None).map(|_| ())); // TODO ping someone here
+                        ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ())
+                    }
                 } else { println!("HOLY S*** I JUST ATE SOME DATA!"); e }
             }
         }
@@ -632,7 +646,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             ret.push(self.process_cnc(i));
             ret.push(self.process_groupme_messages(i));
             let now = chrono::Local::now().timestamp();
-            if now - self.state.throttled_at > 60*10 {
+            if now - self.state.throttled_at > 60*15 {
+                println!("Not feeling throttled atm.");
                 ret.push(self.process_killboard(i));
                 ret.push(self.process_panelboard(i));
                 ret.push(self.process_chatboard(i));

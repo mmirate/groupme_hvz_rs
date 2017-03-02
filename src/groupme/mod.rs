@@ -131,7 +131,7 @@ pub trait Recipient<E: MessageEndpoint> {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, RustcDecodable, RustcEncodable)]
 pub struct Bot { pub bot_id: String, pub group_id: String, pub name: String, pub avatar_url: Option<String>, pub callback_url: Option<String> }
-impl Recipient<self::api::DirectMessages> for Bot { #[inline] fn id(&self) -> &str { &self.bot_id } }
+impl Recipient<self::api::Bots> for Bot { #[inline] fn id(&self) -> &str { &self.bot_id } }
 #[derive(RustcDecodable)] struct BotEnvelope { bot: Bot }
 impl Bot {
     pub fn create(group: &Group, name: String, avatar_url: Option<String>, callback_url: Option<String>) -> Result<Self> { println!("Creating!"); Ok(try!(BotEnvelope::decode(&mut rustc_serialize::json::Decoder::new(try!(self::api::Bots::create(self::api::BotsCreateReqEnvelope { group_id: group.group_id.clone(), name: name, avatar_url: avatar_url, callback_url: callback_url }))))).bot) }
@@ -202,7 +202,7 @@ impl Group {
     pub fn change_owners(&mut self, new_owner: &Member) -> Result<()> { let r = Ok(try!(self::api::Groups::change_owners(&self.group_id, &new_owner.user_id))); try!(self.refresh()); r }
     pub fn refresh(&mut self) -> Result<Self> { let id = self.id.clone(); Ok(std::mem::replace(self, try!(Self::decode(&mut rustc_serialize::json::Decoder::new(try!(self::api::Groups::show(id.as_str()))))))) }
     pub fn get(id: &str) -> Result<Self> { Ok(try!(Self::decode(&mut rustc_serialize::json::Decoder::new(try!(self::api::Groups::show(id)))))) }
-    pub fn update(&mut self, name: Option<String>, description: Option<String>, image_url: Option<String>, share: Option<bool>) -> Result<Self> { try!(self::api::Groups::update(&self.group_id, &self::api::GroupsUpdateReqEnvelope { name: name, description: description, image_url: image_url, share: share })); self.refresh() }
+    pub fn update(&mut self, name: Option<String>, description: Option<String>, image_url: Option<String>, share: Option<bool>) -> Result<Self> { try!(self::api::Groups::update(&self.group_id, name, description, image_url, share )); self.refresh() }
     pub fn add_mut<I: IntoIterator>(&mut self, members: I) -> Result<()> where self::api::MemberId: From<I::Item> { let r = try!(self.add(members)); try!(self.refresh()); Ok(r) }
     pub fn add<I: IntoIterator>(&self, members: I) -> Result<()> where self::api::MemberId: From<I::Item> { self::api::Members::add(&self.id, members).map(|_| ()) } // If GroupMe's "Members Results" ever gets unfscked, result-ids will actually mean something, and we'll change this so we actually return them. Come to think of it, idk why I impl'ed the results endpoint in the first place...
     pub fn remove(&self, member: Member) -> Result<()> { match self.members.iter().find(|m| m.user_id == member.user_id) { Some(m) => self::api::Members::remove(&self.id, &m.id).map(|_| ()), None => Err(ErrorKind::HttpError(hyper::status::StatusCode::NotFound).into()) } }
@@ -211,7 +211,10 @@ impl Group {
         Mentions { data: self.members.iter().enumerate().map(|(i,m)| (m.user_id.clone(), i, 1)).collect() }.into()
     }
     pub fn mention_everyone_except(&self, sender_uid: &str) -> Json {
-        Mentions { data: self.members.iter().filter(|m| m.user_id != sender_uid).enumerate().map(|(i,m)| (m.user_id.clone(), i, 1)).collect() }.into()
+        let ret = Mentions { data: self.members.iter().filter(|m| m.user_id != sender_uid).enumerate().map(|(i,m)| (m.user_id.clone(), i, 1)).collect() };
+        if ret.data.is_empty() {
+            Json::Null
+        } else { ret.into() }
     }
     pub fn post_to_everyone(&self, text: String, attachments: Option<Vec<Json>>) -> Result<()> {
         let mut a = vec![self.mention_everyone()];

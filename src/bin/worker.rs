@@ -28,17 +28,21 @@ fn main() {
         let mut allgroups = groupme::Group::list().unwrap();
         allgroups.sort_by(|a, b| a.members.len().cmp(&b.members.len()));
         while let Some(g) = allgroups.pop() {
-            if factiongroup.is_none() && g.name == groupname("FACTION_GROUP_NAME") && g.members.len() > 2 || g.creator_user_id == me.user_id {
+            if factiongroup.is_none() && g.name == groupname("FACTION_GROUP_NAME") && (g.members.len() > 2 || g.creator_user_id == me.user_id) {
                 std::mem::replace(&mut factiongroup, Some(g));
             } else if cncgroup.is_none() && g.name == groupname("CNC_GROUP_NAME") && g.members.len() == 1 && g.creator_user_id == me.user_id {
                 std::mem::replace(&mut cncgroup, Some(g));
-            } else if factiongroup.is_some() && cncgroup.is_some() { break; }
+            } else if factiongroup.is_some() && cncgroup.is_some() { println!("BROKE!"); break; }
         }
     }
     if cncgroup.is_none() {
         let groupname = |varname: &'static str| std::env::var(varname).unwrap().to_string();
         println!("Upserting CnC Group.");
-        std::mem::replace(&mut cncgroup, Some(groupme::Group::create(groupname("CNC_GROUP_NAME"), None, None, Some(false)).unwrap()));
+        std::mem::replace(&mut cncgroup, Some({
+            let g = groupme::Group::create(groupname("CNC_GROUP_NAME"), None, None, Some(false)).unwrap();
+            groupme_hvz_rs::groupme::Recipient::post(&g, "<> this group is for command+control over your copy of the bots. do not invite anyone else here.".to_owned(), None).unwrap();
+            g
+        }));
     }
     let (factiongroup, cncgroup) = (factiongroup.expect("Cannot find faction Group"), cncgroup.expect("Cannot create CnC Group"));
     let (username, password) = (std::env::var("GATECH_USERNAME").unwrap(), std::env::var("GATECH_PASSWORD").unwrap());

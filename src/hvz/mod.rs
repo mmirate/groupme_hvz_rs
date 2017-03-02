@@ -195,7 +195,7 @@ impl HvZScraper {
     pub fn login(&mut self) -> Result<hyper::client::Client> {
         let mut client = hyper::client::Client::new();
         if self.last_login.elapsed() < std::time::Duration::from_secs(600) { println!("Assuming cached login is still good."); return Ok(client); }
-        let res = try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/rules/"/*"https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"*/), true));
+        let res = try!(self.do_with_cookies(client.get(/*"https://hvz.gatech.edu/rules/"*/"https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"), true));
         client.set_redirect_policy(hyper::client::RedirectPolicy::FollowNone);
         if res.url.host_str().unwrap_or("") != "hvz.gatech.edu" {
             let login_page = if res.url.host_str().map(|h| h == "login.gatech.edu").unwrap_or(false) {
