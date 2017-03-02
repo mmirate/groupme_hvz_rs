@@ -187,6 +187,14 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     use errors::*;
     use regex;
 
+    lazy_static!{
+        static ref KILLBOARD_CHECKERS : Vec<&'static str> = vec![
+"21806948" /* Milo Mirate */,
+"21815306" /* Sriram Ganesan */,
+"13153662" /* Josh Netter */,
+        ];
+    }
+
     fn nll(items: Vec<&str>, postlude: Option<&str>) -> String {
         if let Some((tail, init)) = items.split_last() {
             if let Some((_, _)) = init.split_last() {
@@ -234,7 +242,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             match self {
                 &BotRole::VoxPopuli => "If certain people start your message with \"@Everyone\" or \"@everyone\", I'll repost it in such a way that it will mention everyone. Abuse this, and there will be consequences.".to_string(),
                 &BotRole::Chat(f) => format!("I'm the voice of {} chat. When someone posts something there, I'll tell you about it within a few seconds.{}", f, if f == hvz::Faction::General { " Except during gameplay hours, because spam is bad." } else { "" }),
-                &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within about a minute, and simultaneously try to go about kicking them. If I can't, I'll give a holler.".to_string(),
+                &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within about a minute, and simultaneously try to go about kicking them. If I can't kick them, I'll give a holler.".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Whenever someone signs up, I'll report it here.".to_string(),
                 &BotRole::Killboard(_) => "ERROR: UNKNOWN BOT".to_string(),
                 &BotRole::Panel(hvz::PanelKind::Mission) => "If a mission arises, I'll contact you.".to_string(),
@@ -569,7 +577,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             match self.bots.get(&role) {
                                 Some(ref bot) => {
                                     let names = removalfailures.into_iter().map(|p| p.playername).collect::<Vec<_>>();
-                                    try!(bot.post(format!("DANGER! Of those deaths, I failed to kick {}.", nll(names.iter().map(|ref s| s.as_str()).collect::<Vec<_>>(), None)), None));
+                                    try!(bot.post(format!("{: <1$}", format!("Danger! Of those deaths, I failed to kick {}.", nll(names.iter().map(|ref s| s.as_str()).collect::<Vec<_>>(), None)), KILLBOARD_CHECKERS.len()), Some(vec![self.factionsyncer.group.mention_ids(&KILLBOARD_CHECKERS)])));
                                 },
                                 None => { bail!(ErrorKind::AteData(role)) }
                             }
@@ -634,7 +642,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     if self.state.dormant { e } else {
                         let mut ret = vec![];
                         ret.push(e);
-                        ret.push(bot.post("Ouch. We're being throttled, so we have to go down for 15 minutes. Please check the killboard while we're gone!".to_owned(), None).map(|_| ())); // TODO ping someone here
+                        ret.push(bot.post(format!("{: <1$}", "Ouch. We're being throttled, so we have to go down for 15 minutes. Please check the killboard while we're gone!", KILLBOARD_CHECKERS.len()), Some(vec![self.factionsyncer.group.mention_ids(&KILLBOARD_CHECKERS)])).map(|_| ()));
                         ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ())
                     }
                 } else { println!("HOLY S*** I JUST ATE SOME DATA!"); e }

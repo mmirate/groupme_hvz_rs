@@ -221,6 +221,14 @@ impl Group {
         if let Some(ref attachments) = attachments { a.extend(attachments.iter().cloned()); }
         self.post(format!("{: <1$}", text, self.members.len()), Some(a)).and(Ok(()))
     }
+    pub fn mention_ids(&self, user_ids: &Vec<&str>) -> Json {
+        Mentions { data: user_ids.iter().enumerate().map(|(i, id)| (id.to_string(), i, 1usize)).collect() }.into()
+    }
+    //pub fn post_to(&self, text: String, user_ids: Vec<&str>) -> Result<()> {
+    //    let len = user_ids.len();
+    //    let mut a = vec![self.mention_ids(user_ids)];
+    //    self.post(format!("{: <1$}", text, len), Some(a)).and(Ok(()))
+    //}
 }
 
 #[derive(RustcDecodable)] struct ImageUrlEnvelope { url: String }
