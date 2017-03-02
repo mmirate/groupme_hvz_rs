@@ -614,7 +614,10 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     if self.state.dormant { continue; }
                     let role = BotRole::Chat(faction);
                     match self.bots.get(&role) {
-                        Some(ref bot) => for message in new_messages.into_iter() { try!(bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)); },
+                        Some(ref bot) => for message in new_messages.into_iter() {
+                            if (chrono::Local::now() - message.timestamp).num_hours().abs() > 24 { continue; }
+                            try!(bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None));
+                        },
                         None => { bail!(ErrorKind::AteData(role)) }
                     }
                 }
