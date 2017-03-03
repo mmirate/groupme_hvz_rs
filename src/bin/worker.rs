@@ -1,12 +1,17 @@
 extern crate rustc_serialize;
+#[macro_use] extern crate chan;
+extern crate chan_signal;
 #[macro_use] extern crate clap;
 extern crate groupme_hvz_rs;
+#[macro_use] extern crate error_chain;
 use groupme_hvz_rs::*;
 use groupme_hvz_rs::errors::*;
 
 use std::io::Write;
 
-fn main() {
+quick_main!(run);
+
+fn run() -> Result<()> {
     let _matches = clap::App::new("HvZ/GroupMe interactor").version(crate_version!()).author(crate_authors!())
         //.arg(clap::Arg::with_name("FACTION_GROUP_ID")
         //     .required(true)
@@ -50,11 +55,12 @@ fn main() {
         Box::new(conduit_to_groupme::ConduitHvZToGroupme::new(factiongroup, cncgroup, username.to_owned(), password.to_owned())),
         //Box::new(conduit_to_hvz::ConduitGroupmeToHvZ::new(factiongroup))
     ];
+    let signal = chan_signal::notify(&[chan_signal::Signal::TERM, chan_signal::Signal::INT, chan_signal::Signal::HUP]);
     println!("Alive!");
     let mut i = 0;
     loop {
         for c in conduits.iter_mut() {
-            if let Err(ref e) = c.tick(i) {
+            if let Err(e) = c.tick(i) {
                 std::io::stderr().write(format!("\x07ERROR: {}", e).as_bytes()).unwrap();
                 for e in e.iter().skip(1) {
                     std::io::stderr().write(format!("caused by: {}", e).as_bytes()).unwrap();
@@ -62,9 +68,9 @@ fn main() {
                 if let Some(backtrace) = e.backtrace() {
                     std::io::stderr().write(format!("backtrace: {:?}", backtrace).as_bytes()).unwrap();
                 }
-                if let &Error(ErrorKind::GaTechCreds, _) = e {
+                if let Error(ErrorKind::GaTechCreds, _) = e {
                     std::io::stderr().write(format!("Please fix this problem before continuing.").as_bytes()).unwrap();
-                    std::process::exit(1);
+                    return Err(e);
                 } else {
                     std::io::stderr().write(format!("If you see this error repeatedly, please fix it.").as_bytes()).unwrap();
                 }
@@ -72,7 +78,13 @@ fn main() {
         }
         i += 1;
         i %= 1<<15;
-        println!("==== Sleeping now. ====");
-        std::thread::sleep(std::time::Duration::new(8,0));
+        println!("Tick.");
+        chan_select! {
+            default => std::thread::sleep(std::time::Duration::new(8,0)),
+            signal.recv() -> signal => {
+                println!("Exiting in receipt of {:?}.", signal);
+                return Ok(());
+            }
+        }
     }
 }
