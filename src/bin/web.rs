@@ -1,4 +1,4 @@
-extern crate clap;
+#[macro_use] extern crate clap;
 extern crate pencil;
 
 use pencil::{Pencil, Request, Response, PencilResult};
@@ -16,7 +16,7 @@ fn welcome(_r: &mut Request) -> PencilResult {
 fn get_server_port() -> u16 { std::env::var("PORT").unwrap_or(String::new()).parse().unwrap_or(8080) }
 
 fn main() {
-    let _matches = clap::App::new("HvZ/GroupMe interactor's web page server").version("0.0.2").author("Milo Mirate <mmirate@gatech.edu>").get_matches();
+    let _matches = clap::App::new("HvZ/GroupMe interactor's web page server").version(crate_version!()).author(crate_authors!()).get_matches();
     let mut app = Pencil::new("/");
     app.get("/", "hello", hello);
     app.get("/ping", "ping", ping);

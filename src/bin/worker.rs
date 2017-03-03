@@ -1,5 +1,5 @@
 extern crate rustc_serialize;
-extern crate clap;
+#[macro_use] extern crate clap;
 extern crate groupme_hvz_rs;
 use groupme_hvz_rs::*;
 use groupme_hvz_rs::errors::*;
@@ -7,7 +7,7 @@ use groupme_hvz_rs::errors::*;
 use std::io::Write;
 
 fn main() {
-    let _matches = clap::App::new("HvZ/GroupMe interactor").version("0.0.2").author("Milo Mirate <mmirate@gatech.edu>")
+    let _matches = clap::App::new("HvZ/GroupMe interactor").version(crate_version!()).author(crate_authors!())
         //.arg(clap::Arg::with_name("FACTION_GROUP_ID")
         //     .required(true)
         //     .index(1))
