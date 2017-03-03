@@ -1,5 +1,4 @@
 use std;
-use std::fmt::Debug;
 use rustc_serialize;
 use rustc_serialize::{Decodable/*,Encodable*/};
 use hyper;
@@ -159,8 +158,10 @@ impl Member {
         lazy_static! {
             static ref CALLSIGN : regex::Regex = regex::Regex::new(r#" *"[^"]+?" *"#).unwrap();
             static ref MATT : regex::Regex = regex::Regex::new("🖕").unwrap();
+            static ref DAVID : regex::Regex = regex::Regex::new("Oso Oso").unwrap();
         }
         let name = MATT.replace(&name, "Matthew Zilvetti");
+        let name = DAVID.replace(&name, "David Oso");
         let name = CALLSIGN.replace(&name, " ");
         let mut words_it = name.split_whitespace();
         let mut words = vec![];
@@ -172,8 +173,6 @@ impl Member {
         Self::canonical_name_of(&self.nickname)
     }
 }
-
-fn unwrap<T,E: Debug>(r: std::result::Result<T,E>) -> T { r.unwrap() }
 
 #[derive(Debug, Eq, Hash, Ord, PartialOrd, PartialEq, RustcDecodable, RustcEncodable)]
 pub struct GroupMessagesInfo { pub count: u64, pub last_message_id: String, pub last_message_created_at: u64 }
@@ -189,7 +188,7 @@ impl Group {
         let mut page = 1;
         let mut groups = Vec::<Self>::new();
         let j = try!(self::api::Groups::index(Some(page), Some(500), None));
-        let mut next_groups = unwrap(Vec::<Self>::decode(&mut rustc_serialize::json::Decoder::new(j)));
+        let mut next_groups = try!(Vec::<Self>::decode(&mut rustc_serialize::json::Decoder::new(j)));
         while next_groups.len() > 0 {
             groups.extend(next_groups.into_iter());
             page += 1;

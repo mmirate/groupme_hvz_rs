@@ -14,9 +14,9 @@ quick_main!(|| -> Result<()> {
              .long("rust")
              .help("Format output as entries of a Vec<gtname>"))
         .get_matches();
-    let (username, password) = (std::env::var("GATECH_USERNAME").unwrap(), std::env::var("GATECH_PASSWORD").unwrap());
+    let (username, password) = (try!(std::env::var("GATECH_USERNAME")), try!(std::env::var("GATECH_PASSWORD")));
     let mut scraper = hvz::HvZScraper::new(username.to_owned(), password.to_owned());
-    let mut players = try!(scraper.fetch_killboard()).remove(&hvz::Faction::Human).unwrap();
+    let mut players = try!(scraper.fetch_killboard()).remove(&hvz::Faction::Human).unwrap_or(vec![]);
     players.sort_by(|a, b| a.playername.cmp(&b.playername));
     for p in players {
         if matches.is_present("rust") {

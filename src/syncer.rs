@@ -91,10 +91,10 @@ fn comm_map<K, T>(mut new: BTreeMap<K, Vec<T>>, old: &mut BTreeMap<K, Vec<T>>, h
     (all, additions, deletions)
 }
 
-pub fn setup() -> postgres::Connection {
-    let conn = postgres::Connection::connect(std::env::var("DATABASE_URL").unwrap_or(format!("postgresql://{}@localhost", users::get_user_by_uid(users::get_current_uid()).unwrap().name())).as_str(), postgres::SslMode::Prefer(&openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Sslv23).unwrap())).unwrap();
-    conn.execute("CREATE TABLE IF NOT EXISTS blobs (key VARCHAR PRIMARY KEY, val TEXT)", &[]).unwrap();
-    conn
+pub fn setup() -> Result<postgres::Connection> {
+    let conn = try!(postgres::Connection::connect(std::env::var("DATABASE_URL").unwrap_or(format!("postgresql://{}@localhost", users::get_user_by_uid(users::get_current_uid()).unwrap().name())).as_str(), postgres::SslMode::Prefer(&try!(openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Sslv23)))));
+    try!(conn.execute("CREATE TABLE IF NOT EXISTS blobs (key VARCHAR PRIMARY KEY, val TEXT)", &[]));
+    Ok(conn)
 }
 
 pub fn read(conn: &postgres::Connection, k: &str) -> Result<String> {
@@ -115,8 +115,8 @@ pub fn write(conn: &postgres::Connection, k: &str, v: &str) -> Result<u64> {
     Ok(updates)
 }
 
-#[inline] pub fn writeback<T>(conn: &postgres::Connection, k: &str, v: T) -> Result<usize> where T: rustc_serialize::Encodable + rustc_serialize::Decodable + Default {
-    Ok(try!(write(conn, k, &try!(rustc_serialize::json::encode(&v)))) as usize)
+#[inline] pub fn writeback<T>(conn: &postgres::Connection, k: &str, v: &T) -> Result<u64> where T: rustc_serialize::Encodable + rustc_serialize::Decodable + Default {
+    write(conn, k, &try!(rustc_serialize::json::encode(v)))
 }
 
 pub fn readout<T>(conn: &postgres::Connection, k: &str) -> T where T: rustc_serialize::Encodable + rustc_serialize::Decodable + Default {
@@ -130,7 +130,7 @@ pub fn readout<T>(conn: &postgres::Connection, k: &str) -> T where T: rustc_seri
 pub fn update_list<T>(conn: &postgres::Connection, k: &str, new: Vec<T>, old: &Vec<T>, heed_deletions: bool) -> Result<(Vec<T>, Vec<T>, Vec<T>)> where T: Clone + Decodable + Encodable + Eq + Ord + Debug {
     let (all, additions, deletions) = comm_list(new, old, heed_deletions);
     if !(additions.is_empty() && deletions.is_empty()) {
-        try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
+        try!(writeback(conn, k, &all));
     }
     Ok((all, additions, deletions))
 }
@@ -138,7 +138,7 @@ pub fn update_list<T>(conn: &postgres::Connection, k: &str, new: Vec<T>, old: &V
 pub fn update_map<K, T>(conn: &postgres::Connection, k: &str, new: BTreeMap<K, Vec<T>>, old: &mut BTreeMap<K, Vec<T>>, heed_deletions: bool) -> Result<(BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>)> where T: Clone + rustc_serialize::Decodable + rustc_serialize::Encodable + Eq + Ord + Debug, K: Ord + Clone + Decodable + Encodable + Debug {
     let (all, additions, deletions) = comm_map(new, old, heed_deletions);
     if !(additions.is_empty() && deletions.is_empty()) {
-        try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
+        try!(writeback(conn, k, &all));
     }
     Ok((all, additions, deletions))
 }

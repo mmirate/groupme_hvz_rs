@@ -28,11 +28,14 @@ pub mod errors {
             Hyper (::hyper::Error);
             Io (::std::io::Error);
             Postgres (::postgres::error::Error);
+            PostgresInitialization (::postgres::error::ConnectError);
+            OpenSsl (::openssl::ssl::error::SslError);
             JsonEncoding (::rustc_serialize::json::EncoderError);
             JsonDecoding (::rustc_serialize::json::DecoderError);
             JsonParsing (::rustc_serialize::json::ParserError);
             UrlParsing (::url::ParseError);
             DateFormatParsing (::chrono::format::ParseError);
+            EnvironmentVar (::std::env::VarError);
         }
         errors {
             RLE {}
@@ -88,8 +91,8 @@ pub mod hvz_syncer {
     #[derive(Debug)] pub struct HvZSyncer { pub killboard: hvz::Killboard, pub chatboard: hvz::Chatboard, pub panelboard: hvz::Panelboard, pub scraper: hvz::HvZScraper, conn: postgres::Connection, }
     pub type Changes<T> = (T, T);
     impl HvZSyncer {
-        pub fn new(username: String, password: String) -> HvZSyncer {
-            let mut me = HvZSyncer { scraper: hvz::HvZScraper::new(username, password), conn: syncer::setup(), killboard: hvz::Killboard::new(), chatboard: hvz::Chatboard::new(), panelboard: hvz::Panelboard::new(), };
+        pub fn new(username: String, password: String) -> Result<HvZSyncer> {
+            let mut me = HvZSyncer { scraper: hvz::HvZScraper::new(username, password), conn: try!(syncer::setup()), killboard: hvz::Killboard::new(), chatboard: hvz::Chatboard::new(), panelboard: hvz::Panelboard::new(), };
             std::mem::replace(&mut me .killboard, syncer::readout(&me.conn, "killboard"));
             std::mem::replace(&mut me .chatboard, syncer::readout(&me.conn, "chatboard"));
             std::mem::replace(&mut me.panelboard, syncer::readout(&me.conn, "panelboard"));
@@ -100,7 +103,7 @@ pub mod hvz_syncer {
             me .chatboard.entry(hvz::Faction::Zombie        ).or_insert(vec![]);
             me.panelboard.entry(hvz::PanelKind::Announcement).or_insert(vec![]);
             me.panelboard.entry(hvz::PanelKind::Mission     ).or_insert(vec![]);
-            me
+            Ok(me)
         }
         pub fn update_killboard(&mut self) -> Result<Changes<hvz::Killboard>> {
             let (killboard, additions, deletions) = try!(syncer::update_map(&self.conn, "killboard", try!(self.scraper.fetch_killboard()), &mut self.killboard, true));
@@ -130,10 +133,10 @@ pub mod groupme_syncer {
 
     #[derive(Debug)] pub struct GroupmeSyncer { pub group: groupme::Group, pub last_message_id: Option<String>, pub members: Vec<groupme::Member>, conn: postgres::Connection, }
     impl GroupmeSyncer {
-        pub fn new(group: groupme::Group) -> GroupmeSyncer {
-            let conn = syncer::setup();
+        pub fn new(group: groupme::Group) -> Result<GroupmeSyncer> {
+            let conn = try!(syncer::setup());
             let last_message_id = syncer::read(&conn, (group.group_id.clone() + "last_message_id").as_str()).ok();
-            GroupmeSyncer { group: group, last_message_id: last_message_id, members: vec![], conn: conn }
+            Ok(GroupmeSyncer { group: group, last_message_id: last_message_id, members: vec![], conn: conn })
         }
         pub fn update_messages(&mut self) -> Result<Vec<groupme::Message>> {
             let last_message_id = self.last_message_id.clone();
@@ -306,21 +309,21 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 
     pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, state: RuntimeState }
     impl ConduitHvZToGroupme {
-        pub fn new(factiongroup: groupme::Group, mut cncgroup: groupme::Group, username: String, password: String) -> Self {
+        pub fn new(factiongroup: groupme::Group, mut cncgroup: groupme::Group, username: String, password: String) -> Result<Self> {
             let mut bots = std::collections::BTreeMap::new();
             for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie), BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)].into_iter() {
-                bots.insert(role, groupme::Bot::upsert(&factiongroup, role.nickname(), role.avatar_url(), None).unwrap());
+                bots.insert(role, try!(groupme::Bot::upsert(&factiongroup, role.nickname(), role.avatar_url(), None)));
             }
             let tutorial = cncgroup.description.is_none();
             let state = match rustc_serialize::json::decode::<RuntimeState>(cncgroup.description.as_ref().map(AsRef::as_ref).unwrap_or("")) {
                 Ok(s) => s,
-                _ => { let s = RuntimeState::default(); s.write(&mut cncgroup).unwrap(); s }
+                _ => { let s = RuntimeState::default(); try!(s.write(&mut cncgroup)); s }
             };
-            cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to enter it.", if state.dormant { "DORMANT" } else { "ACTIVE" }), None).unwrap();
+            try!(cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to enter it.", if state.dormant { "DORMANT" } else { "ACTIVE" }), None));
             if tutorial {
-                cncgroup.post("<> annunciation of new missions and announcements can be toggled at any time. To do so, say \"!missions on\", \"!missions off\", \"!annx on\" or \"!annx off\".".to_owned(), None).unwrap();
+                try!(cncgroup.post("<> annunciation of new missions and announcements can be toggled at any time. To do so, say \"!missions on\", \"!missions off\", \"!annx on\" or \"!annx off\".".to_owned(), None));
             }
-            ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer::new(factiongroup), cncsyncer: groupme_syncer::GroupmeSyncer::new(cncgroup), hvz: hvz_syncer::HvZSyncer::new(username, password), bots: bots, state: state }
+            Ok(ConduitHvZToGroupme { factionsyncer: try!(groupme_syncer::GroupmeSyncer::new(factiongroup)), cncsyncer: try!(groupme_syncer::GroupmeSyncer::new(cncgroup)), hvz: try!(hvz_syncer::HvZSyncer::new(username, password)), bots: bots, state: state })
         }
         pub fn mic_check(&mut self) -> Result<()> {
             for (role, bot) in self.bots.iter() {

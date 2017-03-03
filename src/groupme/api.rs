@@ -96,7 +96,7 @@ impl Groups {
             image_url.map(|s| o.insert("image_url".to_string(), Json::String(s)));
             share.map(|b| o.insert("share".to_string(), Json::Boolean(b)));
         }
-        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&Json::Object(o)).unwrap()).header(json_type()).send(), "response")
+        response(client!().post(u.as_str()).body(&try!(rustc_serialize::json::encode(&Json::Object(o)))).header(json_type()).send(), "response")
     }
     pub fn destroy(group_id: &str) -> Result<()> {
         let u = Self::build_url(vec![group_id, "destroy"]);
@@ -108,7 +108,7 @@ impl Groups {
         let mut o = std::collections::BTreeMap::new();
         o.insert("group_id".to_owned(), Json::String(group_id.to_owned()));
         o.insert("owner_id".to_owned(), Json::String(owner_id.to_owned()));
-        let r = client!().post(u.as_str()).body(&rustc_serialize::json::encode(&Json::Array(vec![Json::Object(o)])).unwrap()).header(json_type()).send();
+        let r = client!().post(u.as_str()).body(&try!(rustc_serialize::json::encode(&Json::Array(vec![Json::Object(o)])))).header(json_type()).send();
         let j = try!(Json::from_reader(&mut try!(_empty_response(r))));
         let mut o = match j { Json::Object(m) => m, _ => { return Err(rustc_serialize::json::DecoderError::MissingFieldError("top-lvl is no object".to_string()).into()); } };
         let mut a = match o.remove("results") { Some(Json::Array(x)) => x, _ => { return Err(rustc_serialize::json::DecoderError::MissingFieldError("no response".to_string()).into()); } };
@@ -286,19 +286,14 @@ impl Endpoint for Bots { #[inline] fn base_url() -> url::Url { url_extend(url::U
 impl MessageEndpoint for Bots {
     fn create(bot_id: &str, text: String, attachments: Vec<Json>) -> Result<Json> {
         let u = Self::build_url(vec!["post"]);
-        let mut o = Json::Object(std::collections::BTreeMap::new());
-        //o.as_object_mut().unwrap().insert("message".to_string(), Json::Object(std::collections::BTreeMap::new()));
+        let mut o = std::collections::BTreeMap::new();
         {
-            let ref mut o = o;
-            let mut m = o.as_object_mut().unwrap();//.get_mut("message").unwrap().as_object_mut().unwrap();
-            //let t = time::get_time();
-            //m.insert("source_guid".to_string(), Json::String(format!("{}-{}", t.sec, t.nsec)));
-            m.insert("bot_id".to_string(), Json::String(bot_id.to_string()));
-            m.insert("text".to_string(), Json::String(text));
-            m.insert("picture_url".to_string(), Json::Null);
-            m.insert("attachments".to_string(), Json::Array(attachments.into_iter().filter(|a| !a.is_null()).collect()));
+            o.insert("bot_id".to_string(), Json::String(bot_id.to_string()));
+            o.insert("text".to_string(), Json::String(text));
+            o.insert("picture_url".to_string(), Json::Null);
+            o.insert("attachments".to_string(), Json::Array(attachments.into_iter().filter(|a| !a.is_null()).collect()));
         }
-        empty_response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send()).map(|()| Json::Null)
+        empty_response(client!().post(u.as_str()).body(&try!(rustc_serialize::json::encode(&Json::Object(o)))).header(json_type()).send()).map(|()| Json::Null)
     }
 }
 impl Bots {
@@ -353,7 +348,7 @@ impl Bots {
             let mut m = o.as_object_mut().unwrap();//.get_mut("message").unwrap().as_object_mut().unwrap();
             m.insert("bot_id".to_string(), Json::String(bot_id.to_string()));
         }
-        response(client!().post(u.as_str()).body(&rustc_serialize::json::encode(&o).unwrap()).header(json_type()).send(), "response")
+        response(client!().post(u.as_str()).body(&try!(rustc_serialize::json::encode(&o))).header(json_type()).send(), "response")
     }
 }
 
