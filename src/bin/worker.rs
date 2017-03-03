@@ -32,7 +32,7 @@ fn main() {
                 std::mem::replace(&mut factiongroup, Some(g));
             } else if cncgroup.is_none() && g.name == groupname("CNC_GROUP_NAME") && g.members.len() == 1 && g.creator_user_id == me.user_id {
                 std::mem::replace(&mut cncgroup, Some(g));
-            } else if factiongroup.is_some() && cncgroup.is_some() { println!("BROKE!"); break; }
+            } else if factiongroup.is_some() && cncgroup.is_some() { break; }
         }
     }
     if cncgroup.is_none() {

@@ -97,31 +97,22 @@ pub fn setup() -> postgres::Connection {
     conn
 }
 
-pub fn read(conn: &postgres::Connection, k: &str) -> postgres::Result<String> {
+pub fn read(conn: &postgres::Connection, k: &str) -> Result<String> {
     match try!(conn.query("SELECT val FROM blobs WHERE key = $1", &[&k])).iter().next() { Some(r) => Ok(r.get("val")), None => Ok(String::new()) }
 }
 
-pub fn detect(conn: &postgres::Connection, k: &str) -> postgres::Result<bool> {
+pub fn detect(conn: &postgres::Connection, k: &str) -> Result<bool> {
     match try!(conn.query("SELECT val FROM blobs WHERE key = $1", &[&k])).iter().next() { Some(_) => Ok(true), None => Ok(false) }
 }
 
 
-pub fn write(conn: &postgres::Connection, k: &str, v: &str) -> postgres::Result<u64> {
-    // Yes, this relies on no concurrency. Don't try this at home, kids.
+pub fn write(conn: &postgres::Connection, k: &str, v: &str) -> Result<u64> {
+    // Yes, the correctness of this methodology relies on a lack of concurrency. Don't try this at home, kids.
     let trans = try!(conn.transaction());
     let updates = try!(trans.execute(if try!(detect(conn, k)) { "UPDATE blobs SET val = $2 WHERE key = $1" } else { "INSERT INTO blobs(key,val) VALUES($1,$2)" }, &[&k, &v]));
     try!(trans.commit());
+    ensure!(updates == 1, ErrorKind::DbWriteNopped(k.to_string()));
     Ok(updates)
-}
-
-pub fn write_dammit(conn: &postgres::Connection, k: &str, v: &str) -> postgres::Result<u64> {
-    println!("Pre-write: k = {:?}, v = {:?}", k, v);
-    let i = try!(write(conn, k, v));
-    if i != 1 {
-        println!("i = {:?}\nk = {:?}\nv = {:?}", i, k, v);
-        assert!(false);
-    }
-    Ok(i)
 }
 
 #[inline] pub fn writeback<T>(conn: &postgres::Connection, k: &str, v: T) -> Result<usize> where T: rustc_serialize::Encodable + rustc_serialize::Decodable + Default {
@@ -139,11 +130,7 @@ pub fn readout<T>(conn: &postgres::Connection, k: &str) -> T where T: rustc_seri
 pub fn update_list<T>(conn: &postgres::Connection, k: &str, new: Vec<T>, old: &Vec<T>, heed_deletions: bool) -> Result<(Vec<T>, Vec<T>, Vec<T>)> where T: Clone + Decodable + Encodable + Eq + Ord + Debug {
     let (all, additions, deletions) = comm_list(new, old, heed_deletions);
     if !(additions.is_empty() && deletions.is_empty()) {
-        let i = try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
-        if i != 1 {
-            println!("i = {:?}\nall = {:?}", i, all);
-            assert!(false);
-        }
+        try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
     }
     Ok((all, additions, deletions))
 }
@@ -151,11 +138,7 @@ pub fn update_list<T>(conn: &postgres::Connection, k: &str, new: Vec<T>, old: &V
 pub fn update_map<K, T>(conn: &postgres::Connection, k: &str, new: BTreeMap<K, Vec<T>>, old: &mut BTreeMap<K, Vec<T>>, heed_deletions: bool) -> Result<(BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>, BTreeMap<K, Vec<T>>)> where T: Clone + rustc_serialize::Decodable + rustc_serialize::Encodable + Eq + Ord + Debug, K: Ord + Clone + Decodable + Encodable + Debug {
     let (all, additions, deletions) = comm_map(new, old, heed_deletions);
     if !(additions.is_empty() && deletions.is_empty()) {
-        let i = try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
-        if i != 1 {
-            println!("i = {:?}\nall = {:?}", i, all);
-            assert!(false);
-        }
+        try!(write(conn, k, &try!(rustc_serialize::json::encode(&all))));
     }
     Ok((all, additions, deletions))
 }

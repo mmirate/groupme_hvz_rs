@@ -72,8 +72,8 @@ pub trait BidirRecipient<E: ReadMessageEndpoint> : Recipient<E> + ConversationId
         let mut message_buffer = try!(self.messages(&selector, Some(100)));
         while message_buffer.len() > 0 {
             let id = message_buffer.last().unwrap().id.clone();
-            let wrong_id = message_buffer.first().unwrap().id.clone();
-            println!("id = {:?}, wrong_id = {:?}, message_buffer.len() = {:?}", id, wrong_id, message_buffer.len());
+            //let wrong_id = message_buffer.first().unwrap().id.clone();
+            //println!("id = {:?}, wrong_id = {:?}, message_buffer.len() = {:?}", id, wrong_id, message_buffer.len());
             ret.extend(message_buffer);
             std::mem::replace(&mut selector, match selector {
                 Some(MessageSelector::After(_))  => Some(MessageSelector::After(id)),
@@ -84,7 +84,6 @@ pub trait BidirRecipient<E: ReadMessageEndpoint> : Recipient<E> + ConversationId
             message_buffer = try!(self.messages(&selector, Some(100)));
         }
         match selector { Some(MessageSelector::After(_)) => {}, _ => {ret.reverse()} };
-        println!("messages = {:?}", ret.iter().cloned().take(10).collect::<Vec<Message>>());
         Ok(ret)
     }
     //fn slurp_all_messages(&mut self) -> Result<Vec<Message>> {

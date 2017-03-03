@@ -63,6 +63,10 @@ pub mod errors {
                 description("A bot could not be found.")
                 display("Bot {:?} not found.", role)
             }
+            DbWriteNopped(k: String) {
+                description("A database write failed to affect any rows.")
+                display("Writing to key {:?} failed to affect any rows.", k)
+            }
         }
     }
 }
@@ -133,32 +137,18 @@ pub mod groupme_syncer {
         }
         pub fn update_messages(&mut self) -> Result<Vec<groupme::Message>> {
             let last_message_id = self.last_message_id.clone();
-            println!("last_message_id = {:?}", &last_message_id);
             let selector = last_message_id.clone().map(groupme::MessageSelector::After);
             //let selector = match last_message_id {
             //    Some(ref m) => Some(groupme::MessageSelector::After(m.clone())),
             //    None => None,
             //};
-            println!("selector = {:?}", selector);
             let ret = try!(self.group.slurp_messages(selector.clone()));
             self.last_message_id = if ret.len() > 0 { Some(ret[ret.len()-1].id.clone()) } else { last_message_id };
-            if let Some(ref last_message_id) = self.last_message_id { try!(syncer::write_dammit(&self.conn, (self.group.group_id.clone() + "last_message_id").as_str(), last_message_id.as_str())); }
+            if let Some(ref last_message_id) = self.last_message_id { try!(syncer::write(&self.conn, (self.group.group_id.clone() + "last_message_id").as_str(), last_message_id.as_str())); }
             if let Some(_) = selector { Ok(ret) } else { Ok(vec![]) }
         }
     }
 
-    //pub fn hijack(old_group: &mut groupme::Group) -> Result<groupme::Group, Box<std::error::Error>> {
-    //    let mut new_group = try!(groupme::Group::create(old_group.name.clone(), old_group.description.clone(), old_group.image_url.clone(), Some(false)));
-    //    try!(old_group.post("Oh ****! Chat boss is dead! Stand by, I'm creating a new group; invites incoming.".to_string(), None));
-    //    let old_name = "~(DEFUNCT)".to_string() + &old_group.name;
-    //    try!(old_group.update(Some(old_name), None, None, None));
-    //    // TODO mofo'ing OFFICE MODE! where the foo is OFFICE MODE when you need it?!
-    //    let new_members = old_group.members.iter().filter(|m| m.user_id != old_group.creator_user_id).cloned().collect::<Vec<groupme::Member>>();
-    //    try!(new_group.add_mut(new_members));
-    //    try!(new_group.post("Okay, we're up and running here. But someone else needs to run the bot, stat.".to_string(), None));
-    //    let r : Result<groupme::Group, Box<std::error::Error>> = Ok(new_group);
-    //    r
-    //}
 }
 
 pub mod periodic {
@@ -471,7 +461,6 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             }
             let (hour, _minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
             let new_messages = try!(self.factionsyncer.update_messages());
-            println!("new_messages.len() = {:?}", new_messages.len());
             let me = try!(groupme::User::get());
             for message in new_messages {
                 if 7 <= hour && hour < 23 {
@@ -645,7 +634,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         ret.push(bot.post(format!("{: <1$}", "Ouch. We're being throttled, so we have to go down for 15 minutes. Please check the killboard while we're gone!", KILLBOARD_CHECKERS.len()), Some(vec![self.factionsyncer.group.mention_ids(&KILLBOARD_CHECKERS)])).map(|_| ()));
                         ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ())
                     }
-                } else { println!("HOLY S*** I JUST ATE SOME DATA!"); e }
+                } else { println!("HOLY S*** I JUST ATE SOME DATA! HOW DO WE HAVE LITERALLY NO BOTS WHATSOEVER?!"); e }
             }
         }
 
