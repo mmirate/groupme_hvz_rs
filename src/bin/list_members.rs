@@ -10,6 +10,10 @@ use groupme_hvz_rs::errors::*;
 
 quick_main!(|| -> Result<()> {
     let matches = clap::App::new("GroupMe group membership lister").version("0.0.2").author("Milo Mirate <mmirate@gatech.edu>")
+        .arg(clap::Arg::with_name("rust")
+             .short("r")
+             .long("rust")
+             .help("Format output as entries of a Vec<user_id>"))
         .arg(clap::Arg::with_name("GROUPID")
              .required(true)
              .index(1))
@@ -17,7 +21,11 @@ quick_main!(|| -> Result<()> {
     let mut members = try!(groupme::Group::get(matches.value_of("GROUPID").unwrap())).members.clone();
     members.sort_by(|a, b| a.nickname.cmp(&b.nickname));
     for m in members {
-        println!("{:?} /* {} */,", m.user_id, m.canonical_name());
+        if matches.is_present("rust") {
+            println!("{:?} /* {} */,", m.user_id, m.canonical_name());
+        } else {
+            println!("{}", m.canonical_name());
+        }
     }
     Ok(())
 });
