@@ -1,2 +1,2 @@
 language: rust
-script: make all
+script: cargo build --verbose
