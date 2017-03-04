@@ -78,11 +78,14 @@ fn run() -> Result<()> {
         i += 1;
         i %= 1<<15;
         println!("Tick.");
-        chan_select! {
-            default => std::thread::sleep(std::time::Duration::new(8,0)),
-            signal.recv() -> signal => {
-                println!("Exiting in receipt of {:?}.", signal);
-                return Ok(());
+        let start_of_sleep = std::time::Instant::now();
+        while start_of_sleep.elapsed().as_secs() < 10 {
+            chan_select! {
+                default => std::thread::sleep(std::time::Duration::new(2,0)),
+                signal.recv() -> signal => {
+                    println!("Exiting in receipt of {:?}.", signal);
+                    return Ok(());
+                }
             }
         }
     }
