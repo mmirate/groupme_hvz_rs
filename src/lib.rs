@@ -167,7 +167,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     use hvz_syncer;
     use groupme_syncer;
     extern crate chrono;
-    use self::chrono::Timelike;
+    use self::chrono::{Timelike,TimeZone};
     use groupme;
     use groupme::{Recipient};
     use periodic;
@@ -448,6 +448,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 static ref MESSAGE_TO_HVZCHAT_RE: regex::Regex = regex::Regex::new(r"^@(?P<faction>(?:[Gg]en(?:eral)?|[Aa]ll)|(?:[Hh]um(?:an)?)|(?:[Zz]omb(?:ie)?))(?: |-)?(?:[Cc]hat)? (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_EVERYONE_RE: regex::Regex = regex::Regex::new(r"^@[Ee]veryone (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_ADMINS_RE: regex::Regex = regex::Regex::new(r"^@[Aa]dmins (?P<message>.+)").unwrap();
+                static ref I_AM_DEAD_RE: regex::Regex = regex::Regex::new(r" i( a)m ((very|quite|definitely|totally|100%|completely|acutely|grievously|severely|regrettably|no-(joke|shit|troll)|thoroughly|absolutely|clearly|decidedly|doubtlessly|finally|obviously|plainly|certainly|undeniably|unequivocally|unquestionably|indubitably|positively|unmistakably) )*dead").unwrap();
                 static ref ALLOWED_MESSAGEBLASTERS: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::from_iter(vec![
 "16614279" /* Anthony Stranko */,
 "11791190" /* Cameron Braun */,
@@ -466,9 +467,9 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             let new_messages = try!(self.factionsyncer.update_messages());
             let me = try!(groupme::User::get());
             for message in new_messages {
-                if 7 <= hour && hour < 23 {
+                if 7 <= hour && hour < 23 && (chrono::Local::now() - chrono::Local.timestamp(message.created_at as i64, 0)).num_hours() <= 6 {
                     let signature = format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' && c != '?' }, "")).collect::<Vec<String>>().join(" "));
-                    if signature.contains(" im dead ") || signature.contains(" i am dead ") {
+                    if I_AM_DEAD_RE.is_match(&signature) {
                         if !([&self.factionsyncer.group.creator_user_id, &me.user_id].contains(&&message.user_id)) {
                             if let Some(member) = self.factionsyncer.group.members.iter().find(|&m| m.user_id == message.user_id) {
                                 if let Err(_) = self.factionsyncer.group.remove(member.clone()) {
