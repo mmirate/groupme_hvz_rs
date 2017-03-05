@@ -299,13 +299,13 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         else { " ".to_string() }
     }
 
-    #[derive(RustcDecodable, RustcEncodable)] struct RuntimeState { missions: bool, annxs: bool, dormant: bool, throttled_at: i64 }
+    #[derive(RustcDecodable, RustcEncodable)] struct RuntimeState { dormant: bool, throttled_at: i64 }
     impl RuntimeState {
         fn write(&self, cncgroup: &mut groupme::Group) -> Result<()> {
             cncgroup.update(None, try!(rustc_serialize::json::encode(&self)).into(), None, None).map(|_| ())
         }
     }
-    impl Default for RuntimeState { fn default() -> Self { RuntimeState { missions: false, annxs: false, dormant: true, throttled_at: 0i64 } } }
+    impl Default for RuntimeState { fn default() -> Self { RuntimeState { dormant: true, throttled_at: 0i64 } } }
 
     pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, state: RuntimeState }
     impl ConduitHvZToGroupme {
@@ -319,7 +319,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 Ok(s) => s,
                 _ => { let s = RuntimeState::default(); try!(s.write(&mut cncgroup)); s }
             };
-            try!(cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to enter it.", if state.dormant { "DORMANT" } else { "ACTIVE" }), None));
+            try!(cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to re-enter it.", if state.dormant { "DORMANT" } else { "ACTIVE" }), None));
             if tutorial {
                 try!(cncgroup.post("<> annunciation of new missions and announcements can be toggled at any time. To do so, say \"!missions on\", \"!missions off\", \"!annx on\" or \"!annx off\".".to_owned(), None));
             }
@@ -382,40 +382,6 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         } else {
                             try!(bot.post(format!("You currently have {} Humans versus {} Zombies. Fight harder!", h, z), None));
                         }
-                    }
-                }
-                if words.get(0) == Some(&"!missions") {
-                    match words.get(1) {
-                        Some(&"on") => {
-                            try!(self.cncsyncer.group.post("<> mission annunciation ON; aye, aye".to_string(), None));
-                            try!(message.like());
-                            self.state.missions = true;
-                            try!(self.state.write(&mut self.cncsyncer.group));
-                        },
-                        Some(&"off") => {
-                            try!(self.cncsyncer.group.post("<> mission annunciation OFF; aye, aye".to_string(), None));
-                            try!(message.like());
-                            self.state.missions = false;
-                            try!(self.state.write(&mut self.cncsyncer.group));
-                        },
-                        _ => {},
-                    }
-                }
-                if words.get(0).map(|s| s.starts_with("!ann")).unwrap_or(false) {
-                    match words.get(1) {
-                        Some(&"on") => {
-                            try!(self.cncsyncer.group.post("<> announcement annunciation ON; aye, aye".to_string(), None));
-                            try!(message.like());
-                            self.state.annxs = true;
-                            try!(self.state.write(&mut self.cncsyncer.group));
-                        },
-                        Some(&"off") => {
-                            try!(self.cncsyncer.group.post("<> announcement annunciation OFF; aye, aye".to_string(), None));
-                            try!(message.like());
-                            self.state.annxs = false;
-                            try!(self.state.write(&mut self.cncsyncer.group));
-                        },
-                        _ => {},
                     }
                 }
                 if words.get(0) == Some(&"!wakeup") {
@@ -581,14 +547,13 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             Ok(())
         }
 
+        #[allow(dead_code)]
         fn process_panelboard(&mut self, i: usize) -> Result<()> {
             let (hour, minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
             if 2 < hour && hour < 7 { return Ok(()); }
             if (15 - ((minute as i32)%30)).abs() >= 12 && i % 4 == 2 /*i % 6 == 1*/ {
                 let (additions, _deletions) = try!(self.hvz.update_panelboard());
                 for (kind, new_panels) in additions.into_iter() {
-                    if kind == hvz::PanelKind::Announcement && !self.state.annxs { continue; }
-                    if kind == hvz::PanelKind::Mission && !self.state.missions { continue; }
                     if self.state.dormant { continue; }
                     if new_panels.is_empty() { continue; }
                     let role = BotRole::Panel(kind);
@@ -653,7 +618,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             if now - self.state.throttled_at > 60*15 {
                 println!("Not feeling throttled atm.");
                 ret.push(self.process_killboard(i));
-                ret.push(self.process_panelboard(i));
+                //ret.push(self.process_panelboard(i)); // NOT NEEDED since the admins are doing this with their "Remind" thing
                 ret.push(self.process_chatboard(i));
             }
             match ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ()) {
