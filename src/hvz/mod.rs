@@ -248,7 +248,14 @@ impl HvZScraper {
     pub fn fetch_killboard(&mut self) -> Result<Killboard> {
         let client = try!(self.login());
 
-        let doc = scraper::Html::parse_document(Self::trace(try!(Self::slurp(try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/killboard/"), false)))).as_str()));
+        let doc = scraper::Html::parse_document(Self::trace(try!(Self::slurp({
+            let mut res = try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/killboard/"), false));
+            while !res.url.as_str().contains("killboard") {
+                println!("Capstoneurs...");
+                res = try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/killboard/"), false));
+            }
+            res
+        })).as_str()));
 
         let mut ret = Killboard::new();
         for faction in Faction::killboards() {
