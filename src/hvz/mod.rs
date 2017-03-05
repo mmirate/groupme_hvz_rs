@@ -32,7 +32,7 @@ impl std::fmt::Debug for Faction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "hum", Faction::Zombie => "zomb", Faction::Admin => "admin", Faction::General => "all", }) }
 }
 impl std::fmt::Binary for Faction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "H", Faction::Zombie => "Z", Faction::Admin => "A", Faction::General => "?" }) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "h", Faction::Zombie => "z", Faction::Admin => "a", Faction::General => "?" }) }
 }
 impl<'b> From<&'b str> for Faction { fn from(s: &'b str) -> Faction { match s.to_lowercase().as_str() {
     "human" | "hum" | "h" => Faction::Human, "zombie" | "zomb" | "z" => Faction::Zombie, "admin" => Faction::Admin, _ => Faction::General,
@@ -57,12 +57,21 @@ impl Player {
         })
     }
     pub fn from_kb_link<'a>(link: scraper::ElementRef<'a>) -> Result<Self> {
-        let p_selector = try!(scraper::Selector::parse("p").map_err(|()| Error::from(ErrorKind::CSS)));
+        //let p_selector = try!(scraper::Selector::parse("p").map_err(|()| Error::from(ErrorKind::CSS)));
         Ok(Player {
             gtname: try!(try!(try!(url::Url::parse("https://hvz.gatech.edu/killboard")).join(try!(link.value().attr("href").ok_or(Error::from(ErrorKind::Scraper("kb->link->href:Player.gtname")))))).query_pairs().next().ok_or(Error::from(ErrorKind::Scraper("join(kb->link->href):Player.gtname")))).1.to_string(),
             playername: link.text().collect::<Vec<_>>().concat().trim().to_owned(),
             faction: Faction::default(),
-            kb_playername: link.parent().and_then(scraper::ElementRef::wrap).and_then(|div| div.select(&p_selector).map(|p| p.text().collect::<Vec<_>>().concat().to_string()).filter_map(|s : String| { let mut i = s.split(": "); if let Some("Killed by") = i.next().take() { i.next().take().map(|s| s.to_string()) } else { None } }).next())
+            kb_playername: link.parent().and_then(|td| td.next_sibling()).and_then(|td| td.next_sibling()).and_then(scraper::ElementRef::wrap).map(|td| td.text().collect::<Vec<_>>().concat().trim().to_owned())
+        })
+    }
+    pub fn from_chat_link<'a>(link: scraper::ElementRef<'a>) -> Result<Self> {
+        //let p_selector = try!(scraper::Selector::parse("p").map_err(|()| Error::from(ErrorKind::CSS)));
+        Ok(Player {
+            gtname: try!(try!(try!(url::Url::parse("https://hvz.gatech.edu/killboard")).join(try!(link.value().attr("href").ok_or(Error::from(ErrorKind::Scraper("kb->link->href:Player.gtname")))))).query_pairs().next().ok_or(Error::from(ErrorKind::Scraper("join(kb->link->href):Player.gtname")))).1.to_string(),
+            playername: link.text().collect::<Vec<_>>().concat().trim().to_owned(),
+            faction: Faction::default(),
+            kb_playername: None
         })
     }
 }
@@ -72,7 +81,7 @@ impl Message { pub fn from_tr<'a>(tr: scraper::ElementRef<'a>) -> Result<Self> {
     let col_selector = try!(scraper::Selector::parse("td").map_err(|()| Error::from(ErrorKind::CSS)));
     let link_selector = try!(scraper::Selector::parse("a[href*=\"gtname\"]").map_err(|()| Error::from(ErrorKind::CSS)));
     let cols : Vec<scraper::ElementRef> = tr.select(&col_selector).collect();
-    Ok(Message{sender: try!(Player::from_kb_link(try!(cols[0].select(&link_selector).next().ok_or(Error::from(ErrorKind::Scraper("chat->tr->link:Player")))))), timestamp: try!(chrono::Local.datetime_from_str(&format!("{}/{}", chrono::Local::today().year(), cols[1].inner_html().trim()), "%Y/%m/%d %H:%M")), receiver: Faction::default(), text: cols[2].inner_html().trim().to_owned()})
+    Ok(Message{sender: try!(Player::from_chat_link(try!(cols[0].select(&link_selector).next().ok_or(Error::from(ErrorKind::Scraper("chat->tr->link:Player")))))), timestamp: try!(chrono::Local.datetime_from_str(&format!("{}/{}", chrono::Local::today().year(), cols[1].inner_html().trim()), "%Y/%m/%d %H:%M")), receiver: Faction::default(), text: cols[2].inner_html().trim().to_owned()})
 } }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] #[derive(RustcEncodable, RustcDecodable)] pub enum PanelKind { Announcement, Mission }
@@ -242,7 +251,7 @@ impl HvZScraper {
         let mut ret = Killboard::new();
         for faction in Faction::killboards() {
             ret.remove(&faction);
-            ret.insert(faction, try!(scraper::Html::parse_document(try!(Self::slurp(try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/killboard/"), false)))).as_str()).select(&try!(scraper::Selector::parse(&Self::trace(format!("#{}-killboard a[href*=\"gtname\"]", &faction))).map_err(|()| Error::from(ErrorKind::CSS)))).map(|link| { Ok(Player { faction: faction, .. try!(Player::from_kb_link(link)) }) }).collect::<Result<Vec<_>>>()));
+            ret.insert(faction, try!(scraper::Html::parse_document(try!(Self::slurp(try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/killboard/"), false)))).as_str()).select(&try!(scraper::Selector::parse(&Self::trace(format!("#{:b}killboard a[href*=\"gtname\"]", &faction))).map_err(|()| Error::from(ErrorKind::CSS)))).map(|link| { Ok(Player { faction: faction, .. try!(Player::from_kb_link(link)) }) }).collect::<Result<Vec<_>>>()));
         }
         Ok(ret)
     }
