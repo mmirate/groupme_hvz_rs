@@ -248,10 +248,12 @@ impl HvZScraper {
     pub fn fetch_killboard(&mut self) -> Result<Killboard> {
         let client = try!(self.login());
 
+        let doc = scraper::Html::parse_document(Self::trace(try!(Self::slurp(try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/killboard/"), false)))).as_str()));
+
         let mut ret = Killboard::new();
         for faction in Faction::killboards() {
             ret.remove(&faction);
-            ret.insert(faction, try!(scraper::Html::parse_document(try!(Self::slurp(try!(self.do_with_cookies(client.get("https://hvz.gatech.edu/killboard/"), false)))).as_str()).select(&try!(scraper::Selector::parse(&Self::trace(format!("#{:b}killboard a[href*=\"gtname\"]", &faction))).map_err(|()| Error::from(ErrorKind::CSS)))).map(|link| { Ok(Player { faction: faction, .. try!(Player::from_kb_link(link)) }) }).collect::<Result<Vec<_>>>()));
+            ret.insert(faction, try!(doc.select(&try!(scraper::Selector::parse(&Self::trace(format!("#{:b}killboard a[href*=\"gtname\"]", &faction))).map_err(|()| Error::from(ErrorKind::CSS)))).map(|link| { Ok(Player { faction: faction, .. try!(Player::from_kb_link(link)) }) }).collect::<Result<Vec<_>>>()));
         }
         Ok(ret)
     }
