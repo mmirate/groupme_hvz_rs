@@ -235,7 +235,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             match self {
                 &BotRole::VoxPopuli => "If certain people start your message with \"@Everyone\" or \"@everyone\", I'll repost it in such a way that it will mention everyone. Abuse this, and there will be consequences.".to_string(),
                 &BotRole::Chat(f) => format!("I'm the voice of {} chat. When someone posts something there, I'll tell you about it within a few seconds.{}", f, if f == hvz::Faction::General { " Except during gameplay hours, because spam is bad." } else { "" }),
-                &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within about a minute, and simultaneously try to go about kicking them. If I can't kick them, I'll give a holler.".to_string(),
+                &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within a few minutes, and simultaneously try to go about kicking them. If I can't kick them, I'll give a holler.".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Whenever someone signs up, I'll report it here.".to_string(),
                 &BotRole::Killboard(_) => "ERROR: UNKNOWN BOT".to_string(),
                 &BotRole::Panel(hvz::PanelKind::Mission) => "If a mission arises, I'll contact you.".to_string(),
@@ -299,13 +299,13 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         else { " ".to_string() }
     }
 
-    #[derive(RustcDecodable, RustcEncodable)] struct RuntimeState { dormant: bool, throttled_at: i64 }
+    #[derive(RustcDecodable, RustcEncodable)] struct RuntimeState { newbs: bool, dormant: bool, throttled_at: i64 }
     impl RuntimeState {
         fn write(&self, cncgroup: &mut groupme::Group) -> Result<()> {
             cncgroup.update(None, try!(rustc_serialize::json::encode(&self)).into(), None, None).map(|_| ())
         }
     }
-    impl Default for RuntimeState { fn default() -> Self { RuntimeState { dormant: true, throttled_at: 0i64 } } }
+    impl Default for RuntimeState { fn default() -> Self { RuntimeState { newbs: false, dormant: true, throttled_at: 0i64 } } }
 
     pub struct ConduitHvZToGroupme { factionsyncer: groupme_syncer::GroupmeSyncer, cncsyncer: groupme_syncer::GroupmeSyncer, hvz: hvz_syncer::HvZSyncer, bots: std::collections::BTreeMap<BotRole, groupme::Bot>, state: RuntimeState }
     impl ConduitHvZToGroupme {
@@ -321,7 +321,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             };
             try!(cncgroup.post(format!("<> bot starting up; in {} state. please say \"!wakeup\" to exit the dormant state, or \"!sleep\" to re-enter it.", if state.dormant { "DORMANT" } else { "ACTIVE" }), None));
             if tutorial {
-                try!(cncgroup.post("<> annunciation of new missions and announcements can be toggled at any time. To do so, say \"!missions on\", \"!missions off\", \"!annx on\" or \"!annx off\".".to_owned(), None));
+                try!(cncgroup.post("<> private annunciation of new players can be toggled at any time. to do so, say \"!newbs on\" or \"!newbs off\".".to_owned(), None));
+                try!(cncgroup.post("<> if the game has not yet started and you're not afraid of being accused of spam, say \"!mic check please\" to publicly post a list of features.".to_owned(), None));
             }
             Ok(ConduitHvZToGroupme { factionsyncer: try!(groupme_syncer::GroupmeSyncer::new(factiongroup)), cncsyncer: try!(groupme_syncer::GroupmeSyncer::new(cncgroup)), hvz: try!(hvz_syncer::HvZSyncer::new(username, password)), bots: bots, state: state })
         }
@@ -347,12 +348,12 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             }
             try!(self.factionsyncer.group.post("Two more things. (1) If you start your message with \"@Human Chat\" or \"@General Chat\", I'll repost it to the requested HvZ website chat.".to_string(), None));
             std::thread::sleep(std::time::Duration::from_secs(3));
-            try!(self.factionsyncer.group.post("(2) If your message includes the two words \"I'm dead\" adjacently and in that order, but without the doublequotes and regardless of capitalization or non-doublequote punctuation ... I will kick you from the Group within a few seconds.".to_string(), None));
+            try!(self.factionsyncer.group.post("(2) If your message includes the two words \"I'm dead\" adjacently and in that order (or \"I am dead\"; again, adjacently in that order), but without the doublequotes and regardless of capitalization or non-doublequote & non-questionmark punctuation, and with any number of certain adverbs (e.g. \"definitely\") ... then I will kick you from the Group within half a minute. So please tell us you're dead and wait a minute; instead of immediately removing yourself.".to_string(), None));
             std::thread::sleep(std::time::Duration::from_secs(3));
             Ok(())
         }
         pub fn quick_mic_check(&mut self) -> Result<()> {
-            let text = if self.state.dormant { "Okay, backup bot is up. Ping me if the current bot-operator dies." } else { "Okay, the bot is online again." };
+            let text = if self.state.dormant { "Okay, backup bot is up. Ping me if the current bot-operator dies." } else { "Okay, the bot is online." };
             self.factionsyncer.group.post(text.to_string(), None).map(|_| ())
         }
 
@@ -386,25 +387,40 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 }
                 if words.get(0) == Some(&"!wakeup") {
                     try!(self.cncsyncer.group.post("<> waking up; aye, aye. good luck, operator. say \"!heartbeat please\" if you wish to announce my awakening.".to_string(), None));
-                    try!(self.cncsyncer.group.update(None, "active".to_string().into(), None, None));
                     try!(message.like());
                     self.state.dormant = false;
                     try!(self.state.write(&mut self.cncsyncer.group));
                 }
                 if words.get(0) == Some(&"!sleep") {
                     try!(self.cncsyncer.group.post("<> going to sleep; aye, aye".to_string(), None));
-                    try!(self.cncsyncer.group.update(None, "dormant".to_string().into(), None, None));
                     try!(message.like());
                     self.state.dormant = true;
                     try!(self.state.write(&mut self.cncsyncer.group));
                 }
                 if words.get(0) == Some(&"!dead") {
                     try!(self.cncsyncer.group.post("<> going to sleep; aye, aye. may the horde be with you.".to_string(), None));
-                    try!(self.cncsyncer.group.update(None, "dormant".to_string().into(), None, None));
                     try!(message.like());
                     self.state.dormant = true;
                     try!(self.state.write(&mut self.cncsyncer.group));
                 }
+                if words.get(0).map(|s| s.starts_with("!new")).unwrap_or(false) {
+                    match words.get(words.len()-1) {
+                        Some(&"on") => {
+                            try!(self.cncsyncer.group.post("<> new player annunciation ON; aye, aye".to_string(), None));
+                            try!(message.like());
+                            self.state.newbs = true;
+                            try!(self.state.write(&mut self.cncsyncer.group));
+                        },
+                        Some(&"off") => {
+                            try!(self.cncsyncer.group.post("<> new player annunciation OFF; aye, aye".to_string(), None));
+                            try!(message.like());
+                            self.state.newbs = false;
+                            try!(self.state.write(&mut self.cncsyncer.group));
+                        },
+                        _ => {},
+                    }
+                }
+
             }
             Ok(())
         }
@@ -484,6 +500,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     if new_members.is_empty() { continue; }
                     let role = BotRole::Killboard(faction);
                     if let BotRole::Killboard(hvz::Faction::Human) = role {
+                        if !self.state.newbs { continue; }
                         for member in new_members.iter() {
                             try!(self.cncsyncer.group.post(format!("<> new player: {}@gatech.edu - {}", member.gtname, member.playername), None));
                         }
