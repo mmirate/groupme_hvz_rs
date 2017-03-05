@@ -311,7 +311,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     impl ConduitHvZToGroupme {
         pub fn new(factiongroup: groupme::Group, mut cncgroup: groupme::Group, username: String, password: String) -> Result<Self> {
             let mut bots = std::collections::BTreeMap::new();
-            for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie), BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)].into_iter() {
+            for role in vec![BotRole::VoxPopuli, BotRole::Chat(hvz::Faction::Human), BotRole::Chat(hvz::Faction::General), BotRole::Killboard(hvz::Faction::Human), BotRole::Killboard(hvz::Faction::Zombie)/*, BotRole::Panel(hvz::PanelKind::Mission), BotRole::Panel(hvz::PanelKind::Announcement)*/].into_iter() {
                 bots.insert(role, try!(groupme::Bot::upsert(&factiongroup, role.nickname(), role.avatar_url(), None)));
             }
             let tutorial = cncgroup.description.is_none();
