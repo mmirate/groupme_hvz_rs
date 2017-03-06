@@ -16,7 +16,7 @@ pub type Killboard = BTreeMap<Faction, Vec<Player>>;
 pub type Chatboard = BTreeMap<Faction, Vec<Message>>;
 pub type Panelboard = BTreeMap<PanelKind, Vec<Panel>>;
 
-//fn sorted<T: Ord>(mut v: Vec<T>) -> Vec<T> { v.sort(); v }
+fn sorted<T: Ord>(mut v: Vec<T>) -> Vec<T> { v.sort(); v }
 
 #[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)] #[derive(RustcEncodable, RustcDecodable)] pub enum Faction { General, Human, Zombie, Admin }
 impl Default for Faction { fn default() -> Faction { Faction::General } }
@@ -260,7 +260,7 @@ impl HvZScraper {
         let mut ret = Killboard::new();
         for faction in Faction::killboards() {
             ret.remove(&faction);
-            ret.insert(faction, try!(doc.select(&try!(scraper::Selector::parse(&Self::trace(format!("#{:b}killboard a[href*=\"gtname\"]", &faction))).map_err(|()| Error::from(ErrorKind::CSS)))).map(|link| { Ok(Player { faction: faction, .. try!(Player::from_kb_link(link)) }) }).collect::<Result<Vec<_>>>()));
+            ret.insert(faction, sorted(try!(doc.select(&try!(scraper::Selector::parse(&Self::trace(format!("#{:b}killboard a[href*=\"gtname\"]", &faction))).map_err(|()| Error::from(ErrorKind::CSS)))).map(|link| { Ok(Player { faction: faction, .. try!(Player::from_kb_link(link)) }) }).collect::<Result<Vec<_>>>())));
         }
         Ok(ret)
     }
