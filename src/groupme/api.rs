@@ -306,6 +306,7 @@ impl Bots {
         if params.callback_url.is_none() {
             let mut example_com = url::Url::parse("http://example.com").unwrap();
             example_com.set_fragment(Some(params.name.as_str()));
+            example_com.set_query(Some(try!(User::get()).user_id.as_str()));
             std::mem::replace(&mut params.callback_url, Some(example_com.into_string()));
         }
         //let mut o = Json::Object(std::collections::BTreeMap::new());
