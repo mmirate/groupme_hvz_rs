@@ -40,7 +40,7 @@ impl<'b> From<&'b str> for Faction { fn from(s: &'b str) -> Faction { match s.to
 
 use std::cmp::Ordering;
 
-#[derive(Clone, Debug, Hash)] #[derive(RustcEncodable, RustcDecodable)] pub struct Player { pub gtname: String, pub playername: String, pub faction: Faction, pub kb_playername: Option<String> }
+#[derive(Clone, Debug, Hash)] #[derive(RustcEncodable, RustcDecodable)] pub struct Player { pub gtname: String, pub playername: String, pub faction: Faction, pub kb_gtname: Option<String> }
 impl PartialEq for Player { fn eq(&self, other: &Player) -> bool { (&self.gtname, &self.playername) == (&other.gtname, &other.playername) } }
 impl Eq for Player {}
 impl Ord for Player { fn cmp(&self, other: &Player) -> Ordering { (&self.playername, &self.gtname).cmp(&(&other.playername, &other.gtname)) } }
@@ -53,7 +53,7 @@ impl Player {
             gtname: String::new(),
             playername: try!(doc.select(&playername_selector).next().ok_or(Error::from(ErrorKind::Scraper("doc->Player.playername")))).inner_html().trim().to_string(),
             faction: Faction::from(try!(doc.select(&faction_selector).next().ok_or(Error::from(ErrorKind::Scraper("doc->Player.faction")))).inner_html().trim()),
-            kb_playername: None
+            kb_gtname: None
         })
     }
     pub fn from_kb_link<'a>(link: scraper::ElementRef<'a>) -> Result<Self> {
@@ -62,7 +62,7 @@ impl Player {
             gtname: try!(try!(try!(url::Url::parse("https://hvz.gatech.edu/killboard")).join(try!(link.value().attr("href").ok_or(Error::from(ErrorKind::Scraper("kb->link->href:Player.gtname")))))).query_pairs().next().ok_or(Error::from(ErrorKind::Scraper("join(kb->link->href):Player.gtname")))).1.to_string(),
             playername: link.text().collect::<Vec<_>>().concat().trim().to_owned(),
             faction: Faction::default(),
-            kb_playername: link.parent().and_then(|td| td.next_sibling()).and_then(|td| td.next_sibling()).and_then(scraper::ElementRef::wrap).map(|td| td.text().collect::<Vec<_>>().concat().trim().to_owned())
+            kb_gtname: link.parent().and_then(|td| td.next_sibling()).and_then(|td| td.next_sibling()).and_then(scraper::ElementRef::wrap).map(|td| td.text().collect::<Vec<_>>().concat().trim().to_owned())
         })
     }
     pub fn from_chat_link<'a>(link: scraper::ElementRef<'a>) -> Result<Self> {
@@ -71,8 +71,17 @@ impl Player {
             gtname: try!(try!(try!(url::Url::parse("https://hvz.gatech.edu/killboard")).join(try!(link.value().attr("href").ok_or(Error::from(ErrorKind::Scraper("kb->link->href:Player.gtname")))))).query_pairs().next().ok_or(Error::from(ErrorKind::Scraper("join(kb->link->href):Player.gtname")))).1.to_string(),
             playername: link.text().collect::<Vec<_>>().concat().trim().to_owned(),
             faction: Faction::default(),
-            kb_playername: None
+            kb_gtname: None
         })
+    }
+    pub fn kb_playername<'a>(&'a self, zeds: &'a Vec<Player>) -> Option<&'a str> {
+        if let Some(kb_gtname) = self.kb_gtname.as_ref() {
+            if kb_gtname.to_lowercase() == "the admins" { return Some(kb_gtname); }
+            for zed in zeds.iter() {
+                if zed.gtname == *kb_gtname { return Some(&zed.playername); }
+            }
+            None
+        } else { None }
     }
 }
 

@@ -510,7 +510,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     match self.bots.get(&role) {
                         Some(ref bot) => {
                             let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
-                            let m = match new_members.iter().map(|p| p.kb_playername.clone()).collect::<Option<Vec<String>>>() {
+                            let m = match new_members.iter().map(|p| { p.kb_playername(&self.hvz.killboard.get(&hvz::Faction::Zombie).unwrap_or(&vec![])).map(String::from) }).collect::<Option<Vec<String>>>() {
                                 Some(perpetrators) => role.phrase_2(nll(new_member_names, None).as_str(), nll(perpetrators.iter().map(AsRef::as_ref).collect(), ", resp.".into()).as_str()),
                                 None => role.phrase(nll(new_member_names, None).as_str())
                             };
