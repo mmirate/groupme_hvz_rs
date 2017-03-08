@@ -544,11 +544,12 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             continue 'player;
                         }
                         for (death, removal) in removals.into_iter() {
-                            match self.factionsyncer.group.remove_mut(removal) {
+                            match self.factionsyncer.group.remove(removal) {
                                 Ok(_) => {},
                                 Err(_) => { removalfailures.push(death); }
                             }
                         }
+                        try!(self.factionsyncer.group.refresh());
                         if !removalfailures.is_empty() {
                             match self.bots.get(&role) {
                                 Some(ref bot) => {
