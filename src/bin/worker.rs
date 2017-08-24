@@ -1,6 +1,5 @@
 extern crate rustc_serialize;
-#[macro_use] extern crate chan;
-extern crate chan_signal;
+extern crate ctrlc;
 #[macro_use] extern crate clap;
 extern crate groupme_hvz_rs;
 #[macro_use] extern crate error_chain;
@@ -54,7 +53,15 @@ fn run() -> Result<()> {
         Box::new(try!(conduit_to_groupme::ConduitHvZToGroupme::new(factiongroup, cncgroup, username.to_owned(), password.to_owned()))),
         //Box::new(conduit_to_hvz::ConduitGroupmeToHvZ::new(factiongroup))
     ];
-    let signal = chan_signal::notify(&[chan_signal::Signal::TERM, chan_signal::Signal::INT, chan_signal::Signal::HUP]);
+    let pair = std::sync::Arc::new((std::sync::Mutex::new(false), std::sync::CondVar::new()));
+    {
+        let pair2 = pair.clone();
+        ctrlc::set_handler(move || { let &(ref lock, ref cvar) = &*pair2; *(lock.lock().unwrap()) = true; cvar.notify_all(); }).expect("Error setting Ctrl-C handler");
+    }
+    //let signal = chan_signal::notify(&[chan_signal::Signal::TERM, chan_signal::Signal::INT, chan_signal::Signal::HUP]);
+    
+    let &(ref lock, ref cvar) = &*pair;
+    let mut started = lock.lock().unwrap();
     println!("Alive!");
     let mut i = 0;
     loop {
@@ -78,7 +85,17 @@ fn run() -> Result<()> {
         i += 1;
         i %= 1<<15;
         println!("Tick.");
-        let start_of_sleep = std::time::Instant::now();
+        
+        let result = cvar.wait_timeout(started, Duration::from_secs(10)).unwrap();
+        // 10 seconds have passed, or maybe the value changed!
+        stopped = result.0;
+        if *stopped == true {
+            // We received the notification and the value has been updated, we can leave.
+            break
+        }
+
+        
+        /* let start_of_sleep = std::time::Instant::now();
         while start_of_sleep.elapsed().as_secs() < 10 {
             chan_select! {
                 default => std::thread::sleep(std::time::Duration::new(2,0)),
@@ -87,6 +104,6 @@ fn run() -> Result<()> {
                     return Ok(());
                 }
             }
-        }
+        } */
     }
 }

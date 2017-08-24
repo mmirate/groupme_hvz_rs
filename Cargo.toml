@@ -4,11 +4,10 @@ version = "0.0.2"
 authors = ["Milo Mirate <mmirate@gmx.com>"]
 
 [dependencies]
-chan = "^0.1"
-chan-signal = "^0.2"
 chrono = { version = "^0.2", features = ["rustc-serialize"] }
 clap = "^2"
 cookie = "^0.3.0"
+ctrlc = { version = "3.0", features = ["termination"] }
 hyper = "^0.9.10"
 image = "^0.10.3"
 lazy_static = "^0.2.1"
