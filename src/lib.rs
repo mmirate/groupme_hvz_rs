@@ -12,7 +12,6 @@ extern crate rusttype;
 extern crate scraper;
 extern crate time;
 extern crate url;
-extern crate users;
 extern crate image;
 #[macro_use(static_slice)] extern crate static_slice;
 #[macro_use] extern crate lazy_static;
@@ -282,7 +281,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 &BotRole::Chat(hvz::Faction::Zombie) => messages!["{}{}"],
                 &BotRole::Chat(hvz::Faction::Human) => messages!["{}{}"],
                 &BotRole::Chat(_) => messages!["{:?}{:?}"],
-                &BotRole::Killboard(hvz::Faction::Zombie) => messages!["Verdammt! We lost {} to {}. I hope it was worth it.", "(－‸ლ) {} died (to {}). Come on; we can do better than this!", "Well, I'll be. Looks like {} bit the dust of {}.", "Well, drat. I think the zombies got {}. (\"the zombies\" being {}) I hope they died with dignity.", "Well, I declare. Seems that {} kicked the bucket, kudos to {}.", "Hunh. I guess {} turned (due to {}). A grim inevitability.", "Are you kidding me? Killboard says they've nommed {}! (Or rather, {} nommed them.) Fight harder!", "Argh. {} passed on to the undeath, with the help of {}."],
+                &BotRole::Killboard(hvz::Faction::Zombie) => messages!["Verdammt! We lost {} to {}. I hope it was worth it.", "(－‸ლ) {} died to {}. Come on; we can do better than this!", "Well, I'll be. Looks like {} bit the dust of {}.", "Well, drat. I think the zombies (namely, {1}) got {0}. I hope they died with dignity.", "Well, I declare. Seems that {} kicked the bucket, kudos to {}.", "Hunh. I guess that {1} has turned {0} to the undeath. A grim inevitability.", "Are you kidding me? Killboard says {1} nommed {}! Fight harder!", "Argh. {} passed on to the undeath, with the help of {}."],
                 &BotRole::Killboard(hvz::Faction::Human) => messages!["({:?}, {:?})"],
                 &BotRole::Killboard(_) => messages!["{:?}{:?}"],
                 &BotRole::Panel(hvz::PanelKind::Mission) => messages!["{:?}{:?}"],
@@ -329,27 +328,27 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         pub fn mic_check(&mut self) -> Result<()> {
             for (role, bot) in self.bots.iter() {
                 try!(bot.post(role.watdo(), None));
-                std::thread::sleep(std::time::Duration::from_secs(3));
+                std::thread::sleep(std::time::Duration::from_secs(5));
             }
             {
                 let mut it = self.bots.iter().cycle();
                 if let Some((_, bot)) = it.next() {
                     try!(bot.post("Oh, and be careful. If our operator dies, so do we.".to_string(), None));
-                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    std::thread::sleep(std::time::Duration::from_secs(5));
                     if let Some((_, bot)) = it.next() {
                         try!(bot.post("In such an event, our code is hosted at https://github.com/mmirate/groupme_hvz_rs .".to_string(), None));
-                        std::thread::sleep(std::time::Duration::from_secs(3));
+                        std::thread::sleep(std::time::Duration::from_secs(5));
                         if let Some((_, bot)) = it.next() {
                             try!(bot.post("Just throw it up on Heroku's free plan. (https://www.heroku.com)".to_string(), None));
-                            std::thread::sleep(std::time::Duration::from_secs(3));
+                            std::thread::sleep(std::time::Duration::from_secs(5));
                         }
                     }
                 }
             }
             try!(self.factionsyncer.group.post("Two more things. (1) If you start your message with \"@Human Chat\" or \"@General Chat\", I'll repost it to the requested HvZ website chat.".to_string(), None));
-            std::thread::sleep(std::time::Duration::from_secs(3));
-            try!(self.factionsyncer.group.post("(2) If your message includes the two words \"I'm dead\" adjacently and in that order (or \"I am dead\"; again, adjacently in that order), but without the doublequotes and regardless of capitalization or non-doublequote & non-questionmark punctuation, and with any number of certain adverbs (e.g. \"definitely\") ... then I will kick you from the Group within half a minute. So please tell us you're dead and wait a minute; instead of immediately removing yourself.".to_string(), None));
-            std::thread::sleep(std::time::Duration::from_secs(3));
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            try!(self.factionsyncer.group.post("(2) If your message includes the two words \"I'm dead\" adjacently and in that order (or \"I am dead\"; again, adjacently in that order), but without the doublequotes and regardless of capitalization or non-doublequote & non-questionmark punctuation, and with any number of certain adverbs (e.g. \"definitely\") ... then I will kick you from the Group within about half a minute. So please tell us you're dead and wait a minute; instead of immediately removing yourself.".to_string(), None));
+            std::thread::sleep(std::time::Duration::from_secs(5));
             Ok(())
         }
         pub fn quick_mic_check(&mut self) -> Result<()> {
@@ -511,7 +510,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         Some(ref bot) => {
                             let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
                             let m = match new_members.iter().map(|p| { p.kb_playername(&self.hvz.killboard.get(&hvz::Faction::Zombie).unwrap_or(&vec![])).map(String::from) }).collect::<Option<Vec<String>>>() {
-                                Some(perpetrators) => role.phrase_2(nll(new_member_names, None).as_str(), nll(perpetrators.iter().map(AsRef::as_ref).collect(), ", resp.".into()).as_str()),
+                                Some(perpetrators) => role.phrase_2(nll(new_member_names, None).as_str(), nll(perpetrators.iter().map(AsRef::as_ref).collect(), " (resp.)".into()).as_str()),
                                 None => role.phrase(nll(new_member_names, None).as_str())
                             };
                             //let len = m.len();
@@ -565,7 +564,6 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             Ok(())
         }
 
-        #[allow(dead_code)]
         fn process_panelboard(&mut self, i: usize) -> Result<()> {
             let (hour, minute) = { let n = chrono::Local::now(); (n.hour(), n.minute()) };
             if 2 < hour && hour < 7 { return Ok(()); }

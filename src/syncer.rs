@@ -1,7 +1,6 @@
 use openssl;
 use postgres;
 use rustc_serialize;
-use users;
 use std;
 use std::fmt::Debug;
 use std::iter::Iterator;
@@ -92,7 +91,7 @@ fn comm_map<K, T>(mut new: BTreeMap<K, Vec<T>>, old: &mut BTreeMap<K, Vec<T>>, h
 }
 
 pub fn setup() -> Result<postgres::Connection> {
-    let conn = try!(postgres::Connection::connect(std::env::var("DATABASE_URL").unwrap_or(format!("postgresql://{}@localhost", users::get_user_by_uid(users::get_current_uid()).unwrap().name())).as_str(), postgres::SslMode::Prefer(&try!(openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Sslv23)))));
+    let conn = try!(postgres::Connection::connect(try!(std::env::var("DATABASE_URL")).as_str(), postgres::SslMode::Prefer(&try!(openssl::ssl::SslContext::new(openssl::ssl::SslMethod::Sslv23)))));
     try!(conn.execute("CREATE TABLE IF NOT EXISTS blobs (key VARCHAR PRIMARY KEY, val TEXT)", &[]));
     Ok(conn)
 }
