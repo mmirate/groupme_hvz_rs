@@ -281,7 +281,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 &BotRole::Chat(hvz::Faction::Zombie) => messages!["{}{}"],
                 &BotRole::Chat(hvz::Faction::Human) => messages!["{}{}"],
                 &BotRole::Chat(_) => messages!["{:?}{:?}"],
-                &BotRole::Killboard(hvz::Faction::Zombie) => messages!["Verdammt! We lost {} to {}. I hope it was worth it.", "(－‸ლ) {} died to {}. Come on; we can do better than this!", "Well, I'll be. Looks like {} bit the dust of {}.", "Well, drat. I think the zombies (namely, {1}) got {0}. I hope they died with dignity.", "Well, I declare. Seems that {} kicked the bucket, kudos to {}.", "Hunh. I guess that {1} has turned {0} to the undeath. A grim inevitability.", "Are you kidding me? Killboard says {1} nommed {}! Fight harder!", "Argh. {} passed on to the undeath, with the help of {}."],
+                &BotRole::Killboard(hvz::Faction::Zombie) => messages!["Verdammt! We lost {} to {}. I hope it was worth it.", "(－‸ლ) {} died to {}. Come on; we can do better than this!", "Well, I'll be. Looks like {} bit the dust of {}.", "Well, drat. I think the zombies (namely, {1}) got {0}. I hope they died with dignity.", "Well, I declare. Seems that {} kicked the bucket, kudos to {}.", "Hunh. I guess that {1} turned {0} to the undeath. A grim inevitability.", "Are you kidding me? Killboard says {1} nommed {}! Fight harder!", "Argh. {} passed on to the undeath, with the help of {}."],
                 &BotRole::Killboard(hvz::Faction::Human) => messages!["({:?}, {:?})"],
                 &BotRole::Killboard(_) => messages!["{:?}{:?}"],
                 &BotRole::Panel(hvz::PanelKind::Mission) => messages!["{:?}{:?}"],
@@ -429,7 +429,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 static ref MESSAGE_TO_HVZCHAT_RE: regex::Regex = regex::Regex::new(r"^@(?P<faction>(?:[Gg]en(?:eral)?|[Aa]ll)|(?:[Hh]um(?:an)?)|(?:[Zz]omb(?:ie)?))(?: |-)?(?:[Cc]hat)? (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_EVERYONE_RE: regex::Regex = regex::Regex::new(r"^@[Ee]veryone (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_ADMINS_RE: regex::Regex = regex::Regex::new(r"^@[Aa]dmins (?P<message>.+)").unwrap();
-                static ref I_AM_DEAD_RE: regex::Regex = regex::Regex::new(r" i( a)m ((very|quite|definitely|totally|100%|completely|acutely|grievously|severely|regrettably|no-(joke|shit|troll)|thoroughly|absolutely|clearly|decidedly|doubtlessly|finally|obviously|plainly|certainly|undeniably|unequivocally|unquestionably|indubitably|positively|unmistakably) )*dead").unwrap();
+                static ref I_AM_DEAD_RE: regex::Regex = regex::Regex::new(r" i( a)m ((very|quite|definitely|totally|100%|completely|acutely|grievously|severely|regrettably|no-(joke|shit|troll)|thoroughly|absolutely|clearly|decidedly|doubtlessly|finally|obviously|plainly|certainly|undeniably|unequivocally|unquestionably|indubitably|positively|unmistakably) )*dead ").unwrap();
                 static ref ALLOWED_MESSAGEBLASTERS: std::collections::BTreeSet<&'static str> = std::collections::BTreeSet::from_iter(vec![
 "16614279" /* Anthony Stranko */,
 "11791190" /* Cameron Braun */,
