@@ -1,5 +1,3 @@
-#[macro_use] extern crate lazy_static;
-extern crate rustc_serialize;
 #[macro_use] extern crate clap;
 extern crate regex;
 extern crate groupme_hvz_rs;
@@ -18,7 +16,7 @@ quick_main!(|| -> Result<()> {
              .required(true)
              .index(1))
         .get_matches();
-    let mut members = try!(groupme::Group::get(matches.value_of("GROUPID").unwrap())).members.clone();
+    let mut members = groupme::Group::get(matches.value_of("GROUPID").unwrap())?.members.clone();
     members.sort_by(|a, b| a.nickname.cmp(&b.nickname));
     for m in members {
         if matches.is_present("rust") {

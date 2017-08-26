@@ -63,5 +63,3 @@ Failure to do so may cause information leakage from your new faction to your ex-
 ## Limitations
 
 - Polls Georgia Tech HvZ's website every few seconds. This is bad for both sides' network performance and even worse for clientside power consumption. The original website frontend itself behaves no differently, however.
-- Error handling is primitive (`try!(x :: Result<T, Box<Error>>)` at best; `unwrap()` at worst). Most errors will print an error and halt the current poll or send; non-transient errors (e.g. network down) will additionally spam stderr with highly-cryptic messages and possibly abort the program; you should take care that the program is restarted upon aborting.
-

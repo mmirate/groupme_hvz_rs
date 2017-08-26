@@ -4,23 +4,24 @@ version = "0.0.2"
 authors = ["Milo Mirate <mmirate@gmx.com>"]
 
 [dependencies]
-chrono = { version = "^0.2", features = ["rustc-serialize"] }
+chrono = { version = "^0.4", features = ["serde"] }
 clap = "^2"
-cookie = "^0.3.0"
-ctrlc = { version = "3.0", features = ["termination"] }
-hyper = "^0.9.10"
-image = "^0.10.3"
+cookie = { version = "^0.9", features = ["percent-encode"] }
+ctrlc = { version = "^3", features = ["termination"] }
+reqwest = "^0.7.3"
+gotham = "^0.1"
+image = "^0.15"
 lazy_static = "^0.2.1"
-multipart = { version = "^0.9.0", features = ["client", "hyper"], default-features = false }
-openssl = "^0.7.14"
-pencil = "^0.3"
-postgres = { version = "^0.11.10", features = ["openssl"] }
+postgres = { version = "^0.15", features = ["with-native-tls", "with-serde_json"] }
 error-chain = "^0.10"
 rand = "^0.3"
 regex = "^0.2"
-rustc-serialize = "^0.3.22"
+serde = "^1"
+serde_derive = "^1"
+serde_json = "^1"
+susanoo = "0.0.5"
 rusttype = "0.2.1"
 scraper = "^0.4.0"
-static_slice = "^0.0.2"
+static_slice = "^0.0.3"
 time = "^0.1"
 url = "^1.2.0"

@@ -104,7 +104,7 @@ pub fn render(input: String) -> Result<PngData> {
         image::imageops::overlay(&mut image, &luma_to_lumaa(line), 0, (i as u32) * (lh as u32));
     }
     let mut png_buffer = Vec::<u8>::new();
-    try!(image::png::PNGEncoder::new(&mut png_buffer).encode(&image, image.width(), image.height(), image::GrayA(8)));
+    image::png::PNGEncoder::new(&mut png_buffer).encode(&image, image.width(), image.height(), image::GrayA(8))?;
     Ok(png_buffer)
 }
 
