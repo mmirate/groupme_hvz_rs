@@ -225,12 +225,6 @@ impl std::convert::Into<Value> for Mentions {
     fn into(self) -> Value {
         let mut o = serde_json::Map::new();
         o.insert("type".to_string(), "mentions".into());
-        //let mut user_ids = vec![];
-        //let mut loci = vec![];
-        /*for (user_id, start, len) in self.data.into_iter() {
-            user_ids.push(user_id.into());
-            loci.push((&[start, len]).into());
-        }*/
         let (user_ids, loci) : (Vec<_>, Vec<_>) =
             self.data.into_iter().map(|(user_id, start, len)| (user_id, vec![start, len])).unzip();
         o.insert("user_ids".to_string(), user_ids.into());

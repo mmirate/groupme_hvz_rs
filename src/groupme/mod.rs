@@ -24,12 +24,8 @@ pub trait ConversationId<E: ReadMessageEndpoint> { fn conversation_id(&self, sub
 pub struct Message { pub id: String, source_guid: String, pub created_at: u64, pub user_id: String, pub recipient_id: Option<String>, pub group_id: Option<String>, pub name: String, /*pub avatar_url: String,*/ pub text: Option<String>, pub system: Option<bool>, pub favorited_by: Vec<String> }
 impl Message {
     fn conversation_id(&self) -> Result<String> {
-        let no_id = ErrorKind::JsonTypeError("message had un-ID'ed parent");
-        match self.recipient_id {
-            Some(ref i) => self::api::DirectMessages::conversation_id(i.to_string()),
-            None => self.group_id.clone().ok_or(no_id.into())
-        }
-        //self.recipient_id.ok_or(no_id).map(self::api::DirectMessages::conversation_id).or(self.group_id.ok_or(no_id)).unwrap()
+        let no_id = || ErrorKind::JsonTypeError("message had un-ID'ed parent").into();
+        self.recipient_id.clone().ok_or(no_id()).and_then(self::api::DirectMessages::conversation_id).or(self.group_id.clone().ok_or(no_id()))
     }
     pub fn like(&self) -> Result<()> { self::api::Likes::create(&self.conversation_id()?, &self.id) }
     pub fn unlike(&self) -> Result<()> { self::api::Likes::destroy(&self.conversation_id()?, &self.id) }
@@ -68,12 +64,12 @@ pub trait BidirRecipient<E: ReadMessageEndpoint> : Recipient<E> + ConversationId
 
 pub trait Recipient<E: MessageEndpoint> {
     fn id(&self) -> &str;
-    fn post(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Value> {
+    fn post_without_fallback(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Value> {
         if text.len() >= 1000 { return Err(ErrorKind::TextTooLong(text, attachments).into()); }
         E::create(self.id(), text, attachments.unwrap_or_default())
     }
-    fn post_or_post_image(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Value> {
-        match self.post(text, attachments) {
+    fn post(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Value> {
+        match self.post_without_fallback(text, attachments) {
             Err(Error(ErrorKind::TextTooLong(t, a), _)) => {
                 let (prelude, payload) = if let Some(first) = t.lines().map(ToOwned::to_owned).next() {
                     if first.trim().len() > 0 && first.len() < 500 {
@@ -82,10 +78,17 @@ pub trait Recipient<E: MessageEndpoint> {
                 } else { ("(Long message was converted into image.)".to_owned(), t) };
                 let mut a = a.unwrap_or_default();
                 a.push(upload_image(render::render(payload)?)?);
-                self.post(prelude.to_owned(), Some(a))
+                self.post_without_fallback(prelude.to_owned(), Some(a))
             },
             x => x,
         }
+    }
+    fn post_mentioning<'a, I: IntoIterator<Item=&'a str>>(&self, text: String, uids: I, attachments: Option<Vec<Value>>) -> Result<Value> {
+        let data = uids.into_iter().enumerate().map(|(i,u)| (u.to_owned(), i, 1)).collect::<Vec<_>>();
+        let i = data.len();
+        let mut a = attachments.unwrap_or_default();
+        a.push(Mentions { data: data }.into());
+        self.post(format!("{: <1$}", text, i), Some(a))
     }
 }
 
@@ -96,15 +99,15 @@ impl Recipient<self::api::Bots> for Bot { #[inline] fn id(&self) -> &str { &self
 impl Bot {
     pub fn create(group: &Group, name: String, avatar_url: Option<String>, callback_url: Option<String>) -> Result<Self> { println!("Creating!"); Ok(BotEnvelope::deserialize(self::api::Bots::create(self::api::BotsCreateReqEnvelope { group_id: group.group_id.clone(), name: name, avatar_url: avatar_url, callback_url: callback_url })?)?.bot) }
     pub fn upsert(group: &Group, name: String, avatar_url: Option<String>, callback_url: Option<String>) -> Result<Self> {
-        match Self::list()?.into_iter().find(|b| b.group_id == group.group_id && b.name == name) {
+        /* match Self::list()?.into_iter().find(|b| b.group_id == group.group_id && b.name == name) {
             Some(x) => Ok(x),
             None => Self::create(group, name, avatar_url, callback_url)
-        }
+        } */
+        Self::list()?.into_iter().find(|b| b.group_id == group.group_id && b.name == name).map(Ok).unwrap_or_else(|| Self::create(group, name, avatar_url, callback_url))
     }
     pub fn list() -> Result<Vec<Self>> { Ok(Vec::<Self>::deserialize(self::api::Bots::index()?)?) }
     pub fn destroy(self) -> std::result::Result<(), (Self, Error)> { Ok(self::api::Bots::destroy(&self.bot_id).map(|_| ()).map_err(|e| (self, e))?) }
 }
-
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, Deserialize, Serialize)]
 pub struct Member { pub id: String, pub user_id: String, pub nickname: String, pub muted: bool, pub image_url: Option<String>, pub autokicked: bool, pub app_installed: Option<bool> }
@@ -171,26 +174,15 @@ impl Group {
     pub fn add<I: IntoIterator>(&self, members: I) -> Result<()> where self::api::MemberId: From<I::Item> { self::api::Members::add(&self.id, members).and(Ok(())) } // If GroupMe's "Members Results" ever gets unfscked, result-ids will actually mean something, and we'll change this so we actually return them. Come to think of it, idk why I impl'ed the results endpoint in the first place...
     pub fn remove(&self, member: Member) -> Result<()> { match self.members.iter().find(|m| m.user_id == member.user_id) { Some(m) => self::api::Members::remove(&self.id, &m.id).and(Ok(())), None => bail!(ErrorKind::GroupRemovalFailed(member.clone())) } }
     pub fn remove_mut(&mut self, member: Member) -> Result<()> { let r = self.remove(member)?; self.refresh()?; Ok(r) }
-    pub fn mention_everyone(&self) -> Value {
-        Mentions { data: self.members.iter().enumerate().map(|(i,m)| (m.user_id.clone(), i, 1)).collect() }.into()
+    pub fn member_uids<'a: 'b, 'b>(&'a self) -> Box<Iterator<Item=&'b str> + 'b> {
+        Box::new(self.members.iter().map(|ref m| m.user_id.as_str()))
     }
-    pub fn mention_everyone_except(&self, sender_uid: &str) -> Value {
-        let ret = Mentions { data: self.members.iter().filter(|m| m.user_id != sender_uid).enumerate().map(|(i,m)| (m.user_id.clone(), i, 1)).collect() };
-        ret.into() //if ret.data.is_empty() { Value::Null } else { ret.into() }
-    }
-    pub fn post_to_everyone(&self, text: String, attachments: Option<Vec<Value>>) -> Result<()> {
-        let mut a = vec![self.mention_everyone()];
-        if let Some(attachments) = attachments { a.extend(attachments.into_iter()); }
-        self.post(format!("{: <1$}", text, self.members.len()), Some(a)).and(Ok(()))
+    pub fn member_uids_except<'a: 'b, 'b>(&'a self, exception: &'b str) -> Box<Iterator<Item=&'b str> + 'b> {
+        Box::new(self.member_uids().filter(move |&u| { u != exception }))
     }
     pub fn mention_ids(&self, user_ids: &Vec<&str>) -> Value {
         Mentions { data: user_ids.iter().enumerate().map(|(i, id)| (id.to_string(), i, 1usize)).collect() }.into()
     }
-    //pub fn post_to(&self, text: String, user_ids: Vec<&str>) -> Result<()> {
-    //    let len = user_ids.len();
-    //    let mut a = vec![self.mention_ids(user_ids)];
-    //    self.post(format!("{: <1$}", text, len), Some(a)).and(Ok(()))
-    //}
 }
 
 #[derive(Deserialize)] struct ImageUrlEnvelope { url: String }

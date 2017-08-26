@@ -516,7 +516,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     if ALLOWED_MESSAGEBLASTERS.contains(message.user_id.as_str()) {
                         if let Some(m) = cs.name("message") {
                             if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
-                                vox.post(format!("[{}] {: <2$}", message.name, m.as_str(), self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone_except(&message.user_id.as_str())]))?;
+                                vox.post_mentioning(format!("[{}] {}", message.name, m.as_str()), self.factionsyncer.group.member_uids_except(message.user_id.as_str()), None)?;
                             }
                         }
                     }
@@ -595,7 +595,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         for (death, removal) in removals.into_iter() {
                             match self.factionsyncer.group.remove(removal) {
                                 Ok(_) => {},
-                                Err(_) => { removalfailures.push(death); }
+                                e @ Err(_) => { println!("{:?}", e); removalfailures.push(death); }
                             }
                         }
                         self.factionsyncer.group.refresh()?;
@@ -603,7 +603,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                             match self.bots.get(&role) {
                                 Some(ref bot) => {
                                     let names = removalfailures.into_iter().map(|p| p.playername).collect::<Vec<_>>();
-                                    bot.post(format!("{: <1$}", format!("Danger! Of those deaths, I failed to kick {}.", nll(names.iter().map(|ref s| s.as_str()).collect::<Vec<_>>(), None)), KILLBOARD_CHECKERS.len()), Some(vec![self.factionsyncer.group.mention_ids(&KILLBOARD_CHECKERS)]))?;
+                                    bot.post_mentioning(format!("Danger! Of those deaths, I failed to kick {}.", nll(names.iter().map(|s| s.as_str()).collect::<Vec<_>>(), None)), KILLBOARD_CHECKERS.clone(), None)?;
                                 },
                                 None => { bail!(ErrorKind::AteData(role)) }
                             }
@@ -627,7 +627,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     match self.bots.get(&role) {
                         Some(ref bot) => for panel in new_panels.into_iter() {
                             if kind == hvz::PanelKind::Mission && panel.particulars.map(|p| (p.start.signed_duration_since(now)).num_minutes()).map(|m| m > 65 || m < 15).unwrap_or(true) { continue; } // only post about missions that are actually upcoming
-                            bot.post_or_post_image(format!("{: <2$}\n{}", role.phrase(panel.title.as_str()), panel.text, self.factionsyncer.group.members.len()), Some(vec![self.factionsyncer.group.mention_everyone()]))?;
+                            bot.post_mentioning(format!("{}\n{}", role.phrase(panel.title.as_str()), panel.text), self.factionsyncer.group.member_uids(), None)?;
                         },
                         None => { bail!(ErrorKind::AteData(role)) }
                     }
@@ -667,7 +667,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     if self.state.dormant { e } else {
                         let mut ret = vec![];
                         ret.push(e);
-                        ret.push(bot.post(format!("{: <1$}", "Ouch. We're being throttled, so we have to go down for 15 minutes. Please check the killboard while we're gone!", KILLBOARD_CHECKERS.len()), Some(vec![self.factionsyncer.group.mention_ids(&KILLBOARD_CHECKERS)])).map(|_| ()));
+                        ret.push(bot.post_mentioning("Ouch. We're being throttled, so we have to go down for 15 minutes. Please check the killboard while we're gone!".to_owned(), KILLBOARD_CHECKERS.clone(), None).map(drop));
+                        //ret.push(bot.post(format!("{: <1$}", "Ouch. We're being throttled, so we have to go down for 15 minutes. Please check the killboard while we're gone!", KILLBOARD_CHECKERS.len()), Some(vec![self.factionsyncer.group.mention_ids(&KILLBOARD_CHECKERS)])).map(drop));
                         ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ())
                     }
                 } else { println!("HOLY S*** I JUST ATE SOME DATA! HOW DO WE HAVE LITERALLY NO BOTS WHATSOEVER?!"); e }

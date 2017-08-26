@@ -63,7 +63,7 @@ fn run() -> Result<()> {
     println!("Alive!");
     let mut i = 0;
     loop {
-        let mut started = lock.lock().unwrap();
+        let started = lock.lock().unwrap();
         for c in conduits.iter_mut() {
             if let Err(e) = c.tick(i) {
                 std::io::stderr().write(format!("\x07ERROR: {}", e).as_bytes())?;
