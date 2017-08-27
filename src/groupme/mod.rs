@@ -39,7 +39,7 @@ pub trait BidirRecipient<E: ReadMessageEndpoint> : Recipient<E> + ConversationId
         let backward = match which { &Some(MessageSelector::After(_)) => false, _ => true };
         E::index(self.id(), &which, limit).and_then(|m|
             Ok(MessagesEnvelope::deserialize(m)?.messages)).or_else(|e| {
-                if let Error(ErrorKind::OutOfBandHttpError(reqwest::StatusCode::NotModified), _) = e { Ok(vec![]) } else { Err(e) }
+                if let Error(ErrorKind::HttpError(reqwest::StatusCode::NotModified), _) = e { Ok(vec![]) } else { Err(e) }
             }).map(|mut m| { if backward { m.reverse(); } m })
     }
     fn slurp_messages(&mut self, selector: Option<MessageSelector>) -> Result<Vec<Message>> {
@@ -64,11 +64,11 @@ pub trait BidirRecipient<E: ReadMessageEndpoint> : Recipient<E> + ConversationId
 
 pub trait Recipient<E: MessageEndpoint> {
     fn id(&self) -> &str;
-    fn post_without_fallback(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Value> {
+    fn post_without_fallback(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Message> {
         if text.len() >= 1000 { return Err(ErrorKind::TextTooLong(text, attachments).into()); }
-        E::create(self.id(), text, attachments.unwrap_or_default())
+        Ok(Message::deserialize(E::create(self.id(), text, attachments.unwrap_or_default())?)?)
     }
-    fn post(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Value> {
+    fn post(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Message> {
         match self.post_without_fallback(text, attachments) {
             Err(Error(ErrorKind::TextTooLong(t, a), _)) => {
                 let (prelude, payload) = if let Some(first) = t.lines().map(ToOwned::to_owned).next() {
@@ -83,7 +83,7 @@ pub trait Recipient<E: MessageEndpoint> {
             x => x,
         }
     }
-    fn post_mentioning<'a, I: IntoIterator<Item=&'a str>>(&self, text: String, uids: I, attachments: Option<Vec<Value>>) -> Result<Value> {
+    fn post_mentioning<'a, I: IntoIterator<Item=&'a str>>(&self, text: String, uids: I, attachments: Option<Vec<Value>>) -> Result<Message> {
         let data = uids.into_iter().enumerate().map(|(i,u)| (u.to_owned(), i, 1)).collect::<Vec<_>>();
         let i = data.len();
         let mut a = attachments.unwrap_or_default();

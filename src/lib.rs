@@ -2,6 +2,7 @@
 #![deny(warnings)]
 extern crate chrono;
 extern crate cookie;
+/*#[macro_use]*/ extern crate itertools;
 extern crate reqwest;
 extern crate postgres;
 extern crate rand;
@@ -38,7 +39,7 @@ pub mod errors {
             SignalHandlingThreadPanicked {
                 description("A panic occurred in the signal-handling thread.")
             }
-            OutOfBandHttpError(s: ::reqwest::StatusCode) {
+            HttpError(s: ::reqwest::StatusCode) {
                 from()
                 description("HTTP request returned OUTOFBAND error.")
                 display("HTTP OUTOFBAND error: {:?}.", s)
@@ -191,23 +192,24 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
     use std::iter::FromIterator;
     use errors::*;
     use regex;
+    use itertools::{Itertools};
     //use serde::{Serialize,Deserialize};
     use serde_json;
 
     lazy_static!{
-        static ref KILLBOARD_CHECKERS : Vec<&'static str> = vec![
+        static ref KILLBOARD_CHECKERS : Vec<&'static str> = vec![ // TODO make these user-lists configurable ... somehow ...
 "21806948" /* Milo Mirate */,
 "21815306" /* Sriram Ganesan */,
 "13153662" /* Josh Netter */,
         ];
     }
 
-    fn nll(items: Vec<&str>, postlude: Option<&str>) -> String {
+    fn nll<S: std::fmt::Display + std::borrow::Borrow<str>>(items: Vec<S>, postlude: Option<&str>) -> String {
         if let Some((tail, init)) = items.split_last() {
             if let Some((_, _)) = init.split_last() {
-                format!("{} and {}{}", init.join(", "), tail.to_string(), postlude.unwrap_or(""))
-            } else { tail.to_string() }
-        } else { "".to_string() }
+                format!("{} and {}{}", init.join(", "), tail, postlude.unwrap_or(""))
+            } else { format!("{}", tail) }
+        } else { String::new() }
     }
 
     fn capitalize(s: &str) -> String {
@@ -220,6 +222,16 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 
     #[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] pub enum BotRole { VoxPopuli, Chat(hvz::Faction), Killboard(hvz::Faction), Panel(hvz::PanelKind) }
     impl BotRole {
+        fn _upsert(&self, factiongroup: &groupme::Group) -> Result<groupme::Bot> {
+            groupme::Bot::upsert(factiongroup, self.nickname(), self.avatar_url(), None)
+        }
+        fn retrieve(&self, factiongroup: &groupme::Group, cache: &mut std::collections::BTreeMap<Self, groupme::Bot>) -> Result<groupme::Bot> {
+            let bot = cache.get(self).cloned();
+            if bot.is_none() {
+                cache.insert(*self, self._upsert(factiongroup)?);
+            }
+            Ok(cache.get(self).cloned().unwrap())
+        }
         fn nickname(&self) -> String {
             match self {
                 &BotRole::VoxPopuli => "Vox Populi".to_string(),
@@ -346,20 +358,9 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 bot.post(role.watdo(), None)?;
                 std::thread::sleep(std::time::Duration::from_secs(5));
             }
-            {
-                let mut it = self.bots.iter().cycle();
-                if let Some((_, bot)) = it.next() {
-                    bot.post("Oh, and be careful. If our operator dies, so do we.".to_string(), None)?;
-                    std::thread::sleep(std::time::Duration::from_secs(5));
-                    if let Some((_, bot)) = it.next() {
-                        bot.post("In such an event, our code is hosted at https://github.com/mmirate/groupme_hvz_rs .".to_string(), None)?;
-                        std::thread::sleep(std::time::Duration::from_secs(5));
-                        if let Some((_, bot)) = it.next() {
-                            bot.post("Just throw it up on Heroku's free plan. (https://www.heroku.com)".to_string(), None)?;
-                            std::thread::sleep(std::time::Duration::from_secs(5));
-                        }
-                    }
-                }
+            for ((_, bot), message) in self.bots.iter().zip(vec!["Oh, and be careful. If our operator dies, so do we.", "In such an event, our code is hosted at https://github.com/mmirate/groupme_hvz_rs .", "Just throw it up on Heroku's free plan. (https://www.heroku.com)"]) {
+                bot.post(message.to_string(), None)?;
+                std::thread::sleep(std::time::Duration::from_secs(5));
             }
             self.factionsyncer.group.post("Two more things. (1) If you start your message with \"@Human Chat\" or \"@General Chat\", I'll repost it to the requested HvZ website chat.".to_string(), None)?;
             std::thread::sleep(std::time::Duration::from_secs(5));
@@ -372,109 +373,118 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             self.factionsyncer.group.post(text.to_string(), None).map(|_| ())
         }
 
-        fn process_cnc(&mut self, _i: usize) -> Result<()> {
-            let new_cnc_messages = self.cncsyncer.update_messages()?;
-            for message in new_cnc_messages {
-                if !message.favorited_by.is_empty() { continue; }
-                let _text = message.text().clone();
-                let words = _text.split_whitespace().collect::<Vec<_>>();
-                if words == ["!mic", "check", "please"] {
-                    self.cncsyncer.group.post("<> mic check; aye, aye".to_string(), None)?;
-                    message.like()?;
-                    self.mic_check()?;
-                }
-                if words == ["!heartbeat", "please"] {
-                    self.cncsyncer.group.post("<> quick mic check; aye, aye".to_string(), None)?;
-                    message.like()?;
-                    self.quick_mic_check()?;
-                }
-                if words == ["!headcount", "please"] {
-                    self.cncsyncer.group.post("<> headcount; aye, aye".to_string(), None)?;
-                    message.like()?;
-                    let (h, z) = (self.hvz.killboard.get(&hvz::Faction::Human).map(Vec::len).unwrap_or_default(), self.hvz.killboard.get(&hvz::Faction::Zombie).map(Vec::len).unwrap_or_default());
-                    if let Some(bot) = self.bots.get(&BotRole::Killboard(if z == 0 { hvz::Faction::Human } else { hvz::Faction::Zombie })) {
-                        if z == 0 {
-                            bot.post(format!("Thusfar we have recruited {} people to the cause of Humanity. Hail Victory!", h), None)?;
-                        } else {
-                            bot.post(format!("You currently have {} Humans versus {} Zombies. Fight harder!", h, z), None)?;
-                        }
-                    }
-                }
-                if words.get(0) == Some(&"!wakeup") {
-                    self.cncsyncer.group.post("<> waking up; aye, aye. good luck, operator. say \"!heartbeat please\" if you wish to announce my awakening.".to_string(), None)?;
-                    message.like()?;
-                    self.state.dormant = false;
-                    self.state.write(&mut self.cncsyncer.group)?;
-                }
-                if words.get(0) == Some(&"!sleep") {
-                    self.cncsyncer.group.post("<> going to sleep; aye, aye".to_string(), None)?;
-                    message.like()?;
-                    self.state.dormant = true;
-                    self.state.write(&mut self.cncsyncer.group)?;
-                }
-                if words.get(0) == Some(&"!dead") {
-                    self.cncsyncer.group.post("<> going to sleep; aye, aye. may the horde be with you.".to_string(), None)?;
-                    message.like()?;
-                    self.state.dormant = true;
-                    self.state.write(&mut self.cncsyncer.group)?;
-                }
-                if words.get(0).map(|s| s.starts_with("!new")).unwrap_or(false) {
-                    match words.get(words.len()-1) {
-                        Some(&"on") => {
-                            self.cncsyncer.group.post("<> new player annunciation ON; aye, aye".to_string(), None)?;
-                            message.like()?;
-                            self.state.newbs = true;
-                            self.state.write(&mut self.cncsyncer.group)?;
-                        },
-                        Some(&"off") => {
-                            self.cncsyncer.group.post("<> new player annunciation OFF; aye, aye".to_string(), None)?;
-                            message.like()?;
-                            self.state.newbs = false;
-                            self.state.write(&mut self.cncsyncer.group)?;
-                        },
-                        _ => {},
-                    }
-                }
-                if words.get(0).map(|s| s.starts_with("!annx")).unwrap_or(false) {
-                    match words.get(words.len()-1) {
-                        Some(&"on") => {
-                            self.cncsyncer.group.post("<> announcement annunciation ON; aye, aye".to_string(), None)?;
-                            message.like()?;
-                            self.state.annxs = true;
-                            self.state.write(&mut self.cncsyncer.group)?;
-                        },
-                        Some(&"off") => {
-                            self.cncsyncer.group.post("<> announcement annunciation OFF; aye, aye".to_string(), None)?;
-                            message.like()?;
-                            self.state.annxs = false;
-                            self.state.write(&mut self.cncsyncer.group)?;
-                        },
-                        _ => {},
-                    }
-                }
-                if words.get(0).map(|s| s.starts_with("!mission")).unwrap_or(false) {
-                    match words.get(words.len()-1) {
-                        Some(&"on") => {
-                            self.cncsyncer.group.post("<> mission annunciation ON; aye, aye".to_string(), None)?;
-                            message.like()?;
-                            self.state.missions = true;
-                            self.state.write(&mut self.cncsyncer.group)?;
-                        },
-                        Some(&"off") => {
-                            self.cncsyncer.group.post("<> mission annunciation OFF; aye, aye".to_string(), None)?;
-                            message.like()?;
-                            self.state.missions = false;
-                            self.state.write(&mut self.cncsyncer.group)?;
-                        },
-                        _ => {},
-                    }
-                }
-
-            }
+        fn make_headcount(&mut self) -> Result<()> {
+            let (h, z) = (self.hvz.killboard.get(&hvz::Faction::Human).map(Vec::len).unwrap_or_default(), self.hvz.killboard.get(&hvz::Faction::Zombie).map(Vec::len).unwrap_or_default());
+            let (f, message) = if z == 0 {
+                (hvz::Faction::Human, format!("Thusfar we have recruited {} people to the cause of Humanity. Hail Victory!", h))
+            } else {
+                (hvz::Faction::Zombie, format!("You currently have {} Humans versus {} Zombies. Fight harder!", h, z))
+            };
+            BotRole::Killboard(f).retrieve(&self.factionsyncer.group, &mut self.bots)?.post(message, None)?;
             Ok(())
         }
 
-        fn process_groupme_messages(&mut self, _i: usize) -> Result<()> {
+        fn process_cnc_message(&mut self, message: groupme::Message) -> Result<()> {
+            if !message.favorited_by.is_empty() { return Ok(()); }
+            let _text = message.text().clone();
+            let words = _text.split('!').nth(1).unwrap_or_default().split_whitespace().collect::<Vec<_>>();
+            let mission_complete = if words == ["mic", "check", "please"] {
+                let mc = self.cncsyncer.group.post("<> mic check; aye, aye".to_string(), None)?;
+                message.like()?;
+                self.mic_check()?;
+                Some(mc)
+            } else if words == ["heartbeat", "please"] {
+                let mc = self.cncsyncer.group.post("<> quick mic check; aye, aye".to_string(), None)?;
+                message.like()?;
+                self.quick_mic_check()?;
+                Some(mc)
+            } else if words == ["headcount", "please"] {
+                let mc = self.cncsyncer.group.post("<> headcount; aye, aye".to_string(), None)?;
+                message.like()?;
+                self.make_headcount()?;
+                Some(mc)
+            } else if words.get(0) == Some(&"wakeup") {
+                let mc = self.cncsyncer.group.post("<> waking up; aye, aye. good luck, operator. say \"!heartbeat please\" if you wish to announce my awakening.".to_string(), None)?;
+                message.like()?;
+                self.state.dormant = false;
+                self.state.write(&mut self.cncsyncer.group)?;
+                Some(mc)
+            } else if words.get(0) == Some(&"sleep") {
+                let mc = self.cncsyncer.group.post("<> going to sleep; aye, aye".to_string(), None)?;
+                message.like()?;
+                self.state.dormant = true;
+                self.state.write(&mut self.cncsyncer.group)?;
+                Some(mc)
+            } else if words.get(0) == Some(&"dead") {
+                let mc = self.cncsyncer.group.post("<> going to sleep; aye, aye. may the horde be with you.".to_string(), None)?;
+                message.like()?;
+                self.state.dormant = true;
+                self.state.write(&mut self.cncsyncer.group)?;
+                Some(mc)
+            } else if words.get(0).map(|s| s.starts_with("new")).unwrap_or(false) {
+                match words.get(words.len()-1) {
+                    Some(&"on") => {
+                        let mc = self.cncsyncer.group.post("<> new player annunciation ON; aye, aye".to_string(), None)?;
+                        message.like()?;
+                        self.state.newbs = true;
+                        self.state.write(&mut self.cncsyncer.group)?;
+                        Some(mc)
+                    },
+                    Some(&"off") => {
+                        let mc = self.cncsyncer.group.post("<> new player annunciation OFF; aye, aye".to_string(), None)?;
+                        message.like()?;
+                        self.state.newbs = false;
+                        self.state.write(&mut self.cncsyncer.group)?;
+                        Some(mc)
+                    },
+                    _ => None,
+                }
+            } else if words.get(0).map(|s| s.starts_with("annx")).unwrap_or(false) {
+                match words.get(words.len()-1) {
+                    Some(&"on") => {
+                        let mc = self.cncsyncer.group.post("<> announcement annunciation ON; aye, aye".to_string(), None)?;
+                        message.like()?;
+                        self.state.annxs = true;
+                        self.state.write(&mut self.cncsyncer.group)?;
+                        Some(mc)
+                    },
+                    Some(&"off") => {
+                        let mc = self.cncsyncer.group.post("<> announcement annunciation OFF; aye, aye".to_string(), None)?;
+                        message.like()?;
+                        self.state.annxs = false;
+                        self.state.write(&mut self.cncsyncer.group)?;
+                        Some(mc)
+                    },
+                    _ => None,
+                }
+            } else if words.get(0).map(|s| s.starts_with("mission")).unwrap_or(false) {
+                match words.get(words.len()-1) {
+                    Some(&"on") => {
+                        let mc = self.cncsyncer.group.post("<> mission annunciation ON; aye, aye".to_string(), None)?;
+                        message.like()?;
+                        self.state.missions = true;
+                        self.state.write(&mut self.cncsyncer.group)?;
+                        Some(mc)
+                    },
+                    Some(&"off") => {
+                        let mc = self.cncsyncer.group.post("<> mission annunciation OFF; aye, aye".to_string(), None)?;
+                        message.like()?;
+                        self.state.missions = false;
+                        self.state.write(&mut self.cncsyncer.group)?;
+                        Some(mc)
+                    },
+                    _ => None,
+                }
+            } else { None };
+            if let Some(mc) = mission_complete { mc.like()?; }
+            Ok(())
+        }
+
+        fn process_cnc(&mut self, _i: usize) -> Result<()> {
+            self.cncsyncer.update_messages()?.into_iter().map(|x| self.process_cnc_message(x)).collect::<Vec<_>>().into_iter().collect::<Result<Vec<_>>>().map(drop)
+        }
+
+        fn process_groupme_message(&mut self, me: &groupme::User, now: &chrono::DateTime<chrono::Local>, message: groupme::Message) -> Result<()> {
             lazy_static!{
                 static ref MESSAGE_TO_HVZCHAT_RE: regex::Regex = regex::Regex::new(r"^@(?P<faction>(?:[Gg]en(?:eral)?|[Aa]ll)|(?:[Hh]um(?:an)?)|(?:[Zz]omb(?:ie)?))(?: |-)?(?:[Cc]hat)? (?P<message>.+)").unwrap();
                 static ref MESSAGE_TO_EVERYONE_RE: regex::Regex = regex::Regex::new(r"^@[Ee]veryone (?P<message>.+)").unwrap();
@@ -493,49 +503,97 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 "22267657" /* Scott Nealon */,
 "21815306" /* Sriram Ganesan */,
                 ]);
+                static ref THE_ADMINS: Vec<&'static str> = vec![
+"8856552" /* ??? */,
+"20298305" /* ??? */,
+"19834407" /* ??? */,
+"12949596" /* ??? */,
+"13094442" /* ??? */,
+                ];
             }
-            let (now, hour, _minute) = { let n = chrono::Local::now(); (n, n.hour(), n.minute()) };
-            let new_messages = self.factionsyncer.update_messages()?;
-            let me = groupme::User::get()?;
-            for message in new_messages {
-                if 7 <= hour && hour < 23 && now.signed_duration_since(chrono::Local.timestamp(message.created_at as i64, 0)).num_hours() <= 6 {
-                    let signature = format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' && c != '?' }, "")).collect::<Vec<String>>().join(" "));
-                    if I_AM_DEAD_RE.is_match(&signature) {
-                        if !([&self.factionsyncer.group.creator_user_id, &me.user_id].contains(&&message.user_id)) {
-                            if let Some(member) = self.factionsyncer.group.members.iter().find(|&m| m.user_id == message.user_id) {
-                                if let Err(_) = self.factionsyncer.group.remove(member.clone()) {
-                                    //self.factionsyncer.group.post("... I guess they already got kicked?".to_owned(), None).map(|_| ())? // Actually, we don't care about this.
-                                }
+            
+            if 7 <= now.hour() && now.hour() < 23 && now.signed_duration_since(chrono::Local.timestamp(message.created_at as i64, 0)).num_hours() <= 6 {
+                let signature = format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' && c != '?' }, "")).collect::<Vec<String>>().join(" "));
+                if I_AM_DEAD_RE.is_match(&signature) {
+                    if !([&self.factionsyncer.group.creator_user_id, &me.user_id].contains(&&message.user_id)) {
+                        if let Some(member) = self.factionsyncer.group.members.iter().find(|&m| m.user_id == message.user_id) {
+                            if let Err(_) = self.factionsyncer.group.remove(member.clone()) {
+                                //self.factionsyncer.group.post("... I guess they already got kicked?".to_owned(), None).map(|_| ())? // Actually, we don't care about this.
                             }
-                            self.factionsyncer.group.refresh()?;
                         }
+                        self.factionsyncer.group.refresh()?;
                     }
                 }
-                if self.state.dormant { continue; }
-                if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
-                    if ALLOWED_MESSAGEBLASTERS.contains(message.user_id.as_str()) {
-                        if let Some(m) = cs.name("message") {
-                            if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
-                                vox.post_mentioning(format!("[{}] {}", message.name, m.as_str()), self.factionsyncer.group.member_uids_except(message.user_id.as_str()), None)?;
-                            }
-                        }
-                    }
-                } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
-                    if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
-                        self.hvz.scraper.post_chat(f.as_str().into(), format!("[{} from GroupMe] {}", message.name, m.as_str()).as_str())?;
-                    }
-                } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) { // TODO REDO
+            }
+            if self.state.dormant { return Ok(()); }
+            if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
+                if ALLOWED_MESSAGEBLASTERS.contains(message.user_id.as_str()) {
                     if let Some(m) = cs.name("message") {
-                        if let Some(vox) = self.bots.get(&BotRole::VoxPopuli) {
-                            vox.post(format!("{: <1$}", m.as_str(), self.factionsyncer.group.members.len()),
-                            //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
-                            Some(vec![groupme::Mentions { data: vec![("8856552".to_string(), 0, 1), ("20298305".to_string(), 1, 1), ("19834407".to_string(), 2, 1), ("12949596".to_string(), 3, 1), ("13094442".to_string(), 4, 1)] }.into()])
-                            //Some(vec![self.factionsyncer.group.mention_everyone()])
-                            )?;
-                            //self.hvz.scraper.post_chat(hvz::Faction::Human, format!("@admins {} from GroupMe says, {:?}.", message.name, m).as_str())?;
-                        }
+                        let vox = BotRole::VoxPopuli.retrieve(&self.factionsyncer.group, &mut self.bots)?;
+                        vox.post_mentioning(format!("[{}] {}", message.name, m.as_str()), self.factionsyncer.group.member_uids_except(message.user_id.as_str()), None)?;
+                        
                     }
                 }
+            } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
+                if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
+                    self.hvz.scraper.post_chat(f.as_str().into(), format!("[{} from GroupMe] {}", message.name, m.as_str()).as_str())?;
+                }
+            } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) { // TODO REDO
+                if let Some(m) = cs.name("message") {
+                    let vox = BotRole::VoxPopuli.retrieve(&self.factionsyncer.group, &mut self.bots)?;
+                    vox.post_mentioning(m.as_str().into(), THE_ADMINS.iter().cloned(), None)?;
+                    //self.hvz.scraper.post_chat(hvz::Faction::Human, format!("@admins {} from GroupMe says, {:?}.", message.name, m).as_str())?;
+                    
+                }
+            }
+            Ok(())
+        }
+
+        fn process_groupme_messages(&mut self, _i: usize) -> Result<()> {
+            let now = chrono::Local::now();
+            let me = groupme::User::get()?;
+            self.factionsyncer.update_messages()?.into_iter().map(|x| self.process_groupme_message(&me, &now, x)).collect::<Vec<_>>().into_iter().collect::<Result<Vec<_>>>().map(drop)
+        }
+
+        fn mark_zombie(&self, zombie_player: hvz::Player) -> std::result::Result<(hvz::Player,groupme::Member),hvz::Player> {
+            for member in self.factionsyncer.group.members.iter() {
+                if member.canonical_name().to_lowercase() == zombie_player.playername.to_lowercase() {
+                    return Ok((zombie_player, member.to_owned()));
+                }
+            }
+            if self.hvz.killboard.name_has_ambiguous_surname(&zombie_player.playername) {
+                Err(zombie_player)
+            } else {
+                for member in self.factionsyncer.group.members.iter() {
+                    if hvz::Killboard::surname(&member.canonical_name()).to_lowercase() == hvz::Killboard::surname(&zombie_player.playername).to_lowercase() {
+                        return Ok((zombie_player, member.to_owned()));
+                    }
+                }
+                Err(zombie_player)
+            }
+        }
+
+        fn process_new_zombies(&mut self, new_zombies: Vec<hvz::Player>) -> Result<()> {
+            self.factionsyncer.group.refresh()?;
+            let (not_found, to_remove) : (Vec<_>, Vec<(_,_)>) = 
+                new_zombies.into_iter().partition_map(|z| self.mark_zombie(z).into());
+            let not_kicked : Vec<(_,_)> = to_remove.into_iter().filter_map(|(death, removal)| {
+                if let Err(Error(ErrorKind::GroupRemovalFailed(rem), _)) = self.factionsyncer.group.remove(removal.clone()) {
+                    Some((death, rem))
+                } else { None }
+            }).collect();
+            self.factionsyncer.group.refresh()?;
+            if !not_found.is_empty() || !not_kicked.is_empty() {
+                let role = BotRole::Killboard(hvz::Faction::Zombie);
+                let bot = role.retrieve(&self.factionsyncer.group, &mut self.bots)?;
+                let has_not_found = !not_found.is_empty();
+                let has_not_kicked = !not_kicked.is_empty();
+                let not_found_names = "failed to ID (let alone kick) ".to_owned() + nll(not_found.iter().map(|p| p.playername.as_str()).collect::<Vec<_>>(), None).as_str();
+                let not_kicked_names = "failed to kick ".to_owned() + nll(not_kicked.into_iter().map(|(p, m)| format!("{} (aka {:?})", p.playername, m.nickname)).collect::<Vec<_>>(), None).as_str();
+                let mut warnings : Vec<&str> = vec![];
+                if has_not_found { warnings.push(&not_found_names); }
+                if has_not_kicked { warnings.push(&not_kicked_names); }
+                bot.post_mentioning(format!("Achtung; Trottel! Of those deaths, I {}.", nll(warnings, None)), KILLBOARD_CHECKERS.clone(), None)?;
             }
             Ok(())
         }
@@ -556,58 +614,20 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         continue;
                     }
                     if self.state.dormant { continue; }
-                    match self.bots.get(&role) {
-                        Some(ref bot) => {
-                            let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
-                            let m = match new_members.iter().map(|p| { p.kb_playername(&self.hvz.killboard.get(&hvz::Faction::Zombie).unwrap_or(&vec![])).map(String::from) }).collect::<Option<Vec<String>>>() {
-                                Some(perpetrators) => role.phrase_2(nll(new_member_names, None).as_str(), nll(perpetrators.iter().map(AsRef::as_ref).collect(), " (resp.)".into()).as_str()),
-                                None => role.phrase(nll(new_member_names, None).as_str())
-                            };
-                            //let len = m.len();
-                            bot.post(m,
-                                        None //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
-                                        )?; },
-                        None => { bail!(ErrorKind::AteData(role)) }
+                    let bot = role.retrieve(&self.factionsyncer.group, &mut self.bots)?;
+                    {
+                        let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
+                        let m = match new_members.iter().map(|p| { p.kb_playername(&self.hvz.killboard.get(&hvz::Faction::Zombie).unwrap_or(&vec![])).map(String::from) }).collect::<Option<Vec<String>>>() {
+                            Some(perpetrators) => role.phrase_2(nll(new_member_names, None).as_str(), nll(perpetrators.iter().map(AsRef::as_ref).collect(), " (resp.)".into()).as_str()),
+                            None => role.phrase(nll(new_member_names, None).as_str())
+                        };
+                        //let len = m.len();
+                        bot.post(m,
+                                    None //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
+                                    )?;
                     }
-                    if faction == hvz::Faction::Zombie { // redundant conditional; keep it in case it becomes non-redundant
-                        self.factionsyncer.group.refresh()?;
-                        let (mut removals, mut removalfailures) = (vec![], vec![]);
-                        'player: for zombie_player in new_members {
-                            for member in self.factionsyncer.group.members.iter() {
-                                if member.canonical_name().to_lowercase() == zombie_player.playername.to_lowercase() {
-                                    removals.push((zombie_player, member.to_owned()));
-                                    continue 'player;
-                                }
-                            }
-                            if self.hvz.killboard.name_has_ambiguous_surname(&zombie_player.playername) {
-                                removalfailures.push(zombie_player);
-                                continue 'player;
-                            }
-                            for member in self.factionsyncer.group.members.iter() {
-                                if hvz::Killboard::surname(&member.canonical_name()).to_lowercase() == hvz::Killboard::surname(&zombie_player.playername).to_lowercase() {
-                                    removals.push((zombie_player, member.to_owned()));
-                                    continue 'player;
-                                }
-                            }
-                            removalfailures.push(zombie_player);
-                            continue 'player;
-                        }
-                        for (death, removal) in removals.into_iter() {
-                            match self.factionsyncer.group.remove(removal) {
-                                Ok(_) => {},
-                                e @ Err(_) => { println!("{:?}", e); removalfailures.push(death); }
-                            }
-                        }
-                        self.factionsyncer.group.refresh()?;
-                        if !removalfailures.is_empty() {
-                            match self.bots.get(&role) {
-                                Some(ref bot) => {
-                                    let names = removalfailures.into_iter().map(|p| p.playername).collect::<Vec<_>>();
-                                    bot.post_mentioning(format!("Danger! Of those deaths, I failed to kick {}.", nll(names.iter().map(|s| s.as_str()).collect::<Vec<_>>(), None)), KILLBOARD_CHECKERS.clone(), None)?;
-                                },
-                                None => { bail!(ErrorKind::AteData(role)) }
-                            }
-                        }
+                    if faction == hvz::Faction::Zombie {
+                        self.process_new_zombies(new_members)?;
                     }
                 }
             }
@@ -624,12 +644,10 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     if ! ({ match kind { hvz::PanelKind::Announcement => self.state.annxs, hvz::PanelKind::Mission => self.state.missions } }) { continue; }
                     if new_panels.is_empty() { continue; }
                     let role = BotRole::Panel(kind);
-                    match self.bots.get(&role) {
-                        Some(ref bot) => for panel in new_panels.into_iter() {
-                            if kind == hvz::PanelKind::Mission && panel.particulars.map(|p| (p.start.signed_duration_since(now)).num_minutes()).map(|m| m > 65 || m < 15).unwrap_or(true) { continue; } // only post about missions that are actually upcoming
-                            bot.post_mentioning(format!("{}\n{}", role.phrase(panel.title.as_str()), panel.text), self.factionsyncer.group.member_uids(), None)?;
-                        },
-                        None => { bail!(ErrorKind::AteData(role)) }
+                    let bot = role.retrieve(&self.factionsyncer.group, &mut self.bots)?;
+                    for panel in new_panels.into_iter() {
+                        if kind == hvz::PanelKind::Mission && panel.particulars.map(|p| (p.start.signed_duration_since(now)).num_minutes()).map(|m| m > 65 || m < 15).unwrap_or(true) { continue; } // only post about missions that are actually upcoming
+                        bot.post_mentioning(format!("{}\n{}", role.phrase(panel.title.as_str()), panel.text), self.factionsyncer.group.member_uids(), None)?;
                     }
                 }
             }
@@ -646,12 +664,10 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     if faction == hvz::Faction::General && 7 <= hour && hour < 23 { continue; }
                     if self.state.dormant { continue; }
                     let role = BotRole::Chat(faction);
-                    match self.bots.get(&role) {
-                        Some(ref bot) => for message in new_messages.into_iter() {
-                            if (now.signed_duration_since(message.timestamp)).num_hours().abs() > 24 { continue; }
-                            bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)?;
-                        },
-                        None => { bail!(ErrorKind::AteData(role)) }
+                    let bot = role.retrieve(&self.factionsyncer.group, &mut self.bots)?;
+                    for message in new_messages.into_iter() {
+                        if (now.signed_duration_since(message.timestamp)).num_hours().abs() > 24 { continue; }
+                        bot.post(format!("[{}]{}{}", message.sender.playername, ts(&message), message.text), None)?;
                     }
                 }
             }
@@ -671,7 +687,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         //ret.push(bot.post(format!("{: <1$}", "Ouch. We're being throttled, so we have to go down for 15 minutes. Please check the killboard while we're gone!", KILLBOARD_CHECKERS.len()), Some(vec![self.factionsyncer.group.mention_ids(&KILLBOARD_CHECKERS)])).map(drop));
                         ret.into_iter().collect::<Result<Vec<()>>>().map(|_: Vec<_>| ())
                     }
-                } else { println!("HOLY S*** I JUST ATE SOME DATA! HOW DO WE HAVE LITERALLY NO BOTS WHATSOEVER?!"); e }
+                } else { eprintln!("HOLY S*** I JUST ATE SOME DATA! HOW DO WE HAVE LITERALLY NO BOTS WHATSOEVER?!"); e }
             }
         }
 

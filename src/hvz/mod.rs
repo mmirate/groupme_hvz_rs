@@ -177,7 +177,7 @@ impl HvZScraper {
     fn do_with_cookies(&mut self, rb: &mut reqwest::RequestBuilder, canfail: bool) -> Result<reqwest::Response> {
         self.read_cookies(rb).send().map(|mut res| { self.write_cookies(&mut res); res }).map_err(Error::from).and_then(|mut res| {
             if 509u16 == u16::from(res.status()) { bail!(ErrorKind::BandwidthLimitExceeded) }
-            if !canfail { res = res.error_for_status()?; }
+            if !canfail { res = res.error_for_status().map_err(|e| -> Error { if e.is_client_error() || e.is_server_error() { if let Some(code) = e.status() { ErrorKind::HttpError(code).into() } else { e.into() } } else { e.into() } })?; }
             Ok(res)
         })
     }

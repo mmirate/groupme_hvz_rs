@@ -11,6 +11,7 @@ ctrlc = { version = "^3", features = ["termination"] }
 reqwest = "^0.7.3"
 gotham = "^0.1"
 image = "^0.15"
+itertools = "^0.6"
 lazy_static = "^0.2.1"
 postgres = { version = "^0.15", features = ["with-native-tls", "with-serde_json"] }
 error-chain = "^0.10"

@@ -22,7 +22,7 @@ macro_rules! client {
 
 #[inline] fn json_type() -> reqwest::header::ContentType { reqwest::header::ContentType::json() }
 
-fn _empty_response(r: reqwest::Result<reqwest::Response>) -> Result<reqwest::Response> { Ok(r?.error_for_status()?) }
+fn _empty_response(r: reqwest::Result<reqwest::Response>) -> Result<reqwest::Response> { Ok(r?.error_for_status().map_err(|e| -> Error { if e.is_client_error() || e.is_server_error() { if let Some(code) = e.status() { ErrorKind::HttpError(code).into() } else { e.into() } } else { e.into() } })?) }
 
 fn slurp<R: std::io::Read>(mut r: R) -> std::io::Result<String> { let mut buffer = Vec::<u8>::new(); r.read_to_end(&mut buffer).and(Ok(String::from_utf8_lossy(&buffer).to_string())) }
 fn empty_response(r: reqwest::Result<reqwest::Response>) -> Result<()> {
@@ -37,7 +37,7 @@ fn response(r: reqwest::Result<reqwest::Response>, key: &'static str) -> Result<
     match o.remove("status") {
         Some(Value::Number(n)) => { if n.as_u64() == Some(200u64) || n.as_f64() == Some(200.0f64) {} else {
             let x = n.as_u64().map(|i| format!("{:.0}", i)).or(n.as_f64().map(|i| format!("{:.0}", i))).unwrap().parse().unwrap_or(599u16);
-            bail!(ErrorKind::OutOfBandHttpError(reqwest::StatusCode::try_from(x).unwrap_or(reqwest::StatusCode::Unregistered(x))))
+            bail!(ErrorKind::HttpError(reqwest::StatusCode::try_from(x).unwrap_or(reqwest::StatusCode::Unregistered(x))))
         } },
         Some(_) => bail!(ErrorKind::JsonTypeError("out-of-band status had wrong type")),
         None => {},
@@ -51,7 +51,7 @@ fn null_response(r: reqwest::Result<reqwest::Response>, key: &'static str) -> Re
     match o.remove("status") {
         Some(Value::Number(n)) => { if n.as_u64() == Some(200u64) || n.as_f64() == Some(200.0f64) {} else {
             let x = n.as_u64().map(|i| format!("{:.0}", i)).or(n.as_f64().map(|i| format!("{:.0}", i))).unwrap().parse().unwrap_or(599u16);
-            bail!(ErrorKind::OutOfBandHttpError(reqwest::StatusCode::try_from(x).unwrap_or(reqwest::StatusCode::Unregistered(x))))
+            bail!(ErrorKind::HttpError(reqwest::StatusCode::try_from(x).unwrap_or(reqwest::StatusCode::Unregistered(x))))
         } },
         Some(_) => bail!(ErrorKind::JsonTypeError("out-of-band status had wrong type")),
         None => {},
