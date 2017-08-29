@@ -1,23 +1,24 @@
 #![recursion_limit = "2048"]
 #![deny(warnings)]
+
 extern crate chrono;
 extern crate cookie;
+#[macro_use] extern crate error_chain;
+extern crate image;
 /*#[macro_use]*/ extern crate itertools;
-extern crate reqwest;
+#[macro_use] extern crate lazy_static;
 extern crate postgres;
 extern crate rand;
 extern crate regex;
-#[macro_use] extern crate serde_derive;
-extern crate serde;
-extern crate serde_json;
+extern crate reqwest;
 extern crate rusttype;
 extern crate scraper;
+#[macro_use] extern crate serde_derive;
+extern crate serde_json;
+extern crate serde;
+#[macro_use(static_slice)] extern crate static_slice;
 extern crate time;
 extern crate url;
-extern crate image;
-#[macro_use(static_slice)] extern crate static_slice;
-#[macro_use] extern crate lazy_static;
-#[macro_use] extern crate error_chain;
 pub mod groupme;
 pub mod hvz;
 pub mod syncer;
@@ -44,7 +45,7 @@ pub mod errors {
                 description("HTTP request returned OUTOFBAND error.")
                 display("HTTP OUTOFBAND error: {:?}.", s)
             }
-            TextTooLong(text: String, attachments: Option<Vec<::serde_json::Value>>) {
+            TextTooLong(text: String, attachments: Option<Vec<::groupme::Attachment>>) {
                 description("A message was too long for GroupMe.")
                 display("Message {:?} cannot be sent via GroupMe.", text)
             }
@@ -204,6 +205,13 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         ];
     }
 
+    fn entry_or_try_insert_with<'a, 'b: 'a, F: FnOnce(K) -> Result<V>, K: Ord + Copy, V>(this: &'b mut std::collections::BTreeMap<K, V>, key: K, default: F) -> Result<&'a mut V> {
+        Ok(match this.entry(key) {
+            std::collections::btree_map::Entry::Occupied(oe) => oe.into_mut(),
+            std::collections::btree_map::Entry::Vacant(ve) => ve.insert(default(key)?),
+        })
+    }
+
     fn nll<S: std::fmt::Display + std::borrow::Borrow<str>>(items: Vec<S>, postlude: Option<&str>) -> String {
         if let Some((tail, init)) = items.split_last() {
             if let Some((_, _)) = init.split_last() {
@@ -225,12 +233,8 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         fn _upsert(&self, factiongroup: &groupme::Group) -> Result<groupme::Bot> {
             groupme::Bot::upsert(factiongroup, self.nickname(), self.avatar_url(), None)
         }
-        fn retrieve(&self, factiongroup: &groupme::Group, cache: &mut std::collections::BTreeMap<Self, groupme::Bot>) -> Result<groupme::Bot> {
-            let bot = cache.get(self).cloned();
-            if bot.is_none() {
-                cache.insert(*self, self._upsert(factiongroup)?);
-            }
-            Ok(cache.get(self).cloned().unwrap())
+        fn retrieve<'a>(&self, factiongroup: &groupme::Group, cache: &'a mut std::collections::BTreeMap<Self, groupme::Bot>) -> Result<&'a mut groupme::Bot> {
+            entry_or_try_insert_with(cache, *self, |this| this._upsert(factiongroup))
         }
         fn nickname(&self) -> String {
             match self {
@@ -259,11 +263,11 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         }
         fn watdo(&self) -> String {
             match self {
-                &BotRole::VoxPopuli => "If certain people start your message with \"@Everyone\" or \"@everyone\", I'll repost it in such a way that it will mention everyone. Abuse this, and there will be consequences.".to_string(),
+                &BotRole::VoxPopuli => "If certain people start their message with \"@Everyone\" or \"@everyone\", I'll repeat the message in such a way that it will \"@mention\" *everyone*.\nAbuse this, and there will be consequences.".to_string(),
                 &BotRole::Chat(f) => format!("I'm the voice of {} chat. When someone posts something there, I'll tell you about it within a few seconds.{}", f, if f == hvz::Faction::General { " Except during gameplay hours, because spam is bad." } else { "" }),
                 &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within a few minutes, and simultaneously try to go about kicking them. If I can't kick them, I'll give a holler.".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Whenever someone signs up, I'll report it here.".to_string(),
-                &BotRole::Killboard(_) => "ERROR: UNKNOWN BOT".to_string(),
+                &BotRole::Killboard(x) => format!("ERROR: THE \"{}\" FACTION LACKS A KILLBOARD SECTION", x),
                 &BotRole::Panel(hvz::PanelKind::Mission) => "If a mission arises, I'll contact you.".to_string(),
                 &BotRole::Panel(hvz::PanelKind::Announcement) => "I announce the nightly announcements. #DeptOfRedundancyDept".to_string(),
             }
@@ -541,7 +545,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) { // TODO REDO
                 if let Some(m) = cs.name("message") {
                     let vox = BotRole::VoxPopuli.retrieve(&self.factionsyncer.group, &mut self.bots)?;
-                    vox.post_mentioning(m.as_str().into(), THE_ADMINS.iter().cloned(), None)?;
+                    vox.post_mentioning(m.as_str(), THE_ADMINS.iter().cloned(), None)?;
                     //self.hvz.scraper.post_chat(hvz::Faction::Human, format!("@admins {} from GroupMe says, {:?}.", message.name, m).as_str())?;
                     
                 }
@@ -614,17 +618,13 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                         continue;
                     }
                     if self.state.dormant { continue; }
-                    let bot = role.retrieve(&self.factionsyncer.group, &mut self.bots)?;
                     {
                         let new_member_names = new_members.iter().map(|p| p.playername.as_str()).collect::<Vec<&str>>();
                         let m = match new_members.iter().map(|p| { p.kb_playername(&self.hvz.killboard.get(&hvz::Faction::Zombie).unwrap_or(&vec![])).map(String::from) }).collect::<Option<Vec<String>>>() {
                             Some(perpetrators) => role.phrase_2(nll(new_member_names, None).as_str(), nll(perpetrators.iter().map(AsRef::as_ref).collect(), " (resp.)".into()).as_str()),
                             None => role.phrase(nll(new_member_names, None).as_str())
                         };
-                        //let len = m.len();
-                        bot.post(m,
-                                    None //Some(vec![groupme::Mentions { data: vec![(self.factionsyncer.group.creator_user_id.clone(), 0, len)] }.into()])
-                                    )?;
+                        role.retrieve(&self.factionsyncer.group, &mut self.bots)?.post(m, None)?;
                     }
                     if faction == hvz::Faction::Zombie {
                         self.process_new_zombies(new_members)?;

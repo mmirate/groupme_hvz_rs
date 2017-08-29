@@ -1,31 +1,31 @@
 use std;
 use serde::{Deserialize/*,Serialize*/};
-use serde_json;
 use reqwest;
 use regex;
 use render;
 mod api;
+mod attachments;
 
 use errors::*;
 
-pub use self::api::{MessageSelector,Mentions};
+pub use self::api::{MessageSelector};
 use self::api::{ReadMessageEndpoint,MessageEndpoint};
-use serde_json::Value;
 
+pub use self::attachments::Attachment;
 pub use self::api::User;
 
 //use self::api::*;
 
 //fn trace<T: Debug>(x: T) -> T { println!("{:?}", x); x }
 
-pub trait ConversationId<E: ReadMessageEndpoint> { fn conversation_id(&self, sub_id: String) -> Result<String> { E::conversation_id(sub_id) } }
+pub trait ConversationId<E: ReadMessageEndpoint> { fn conversation_id(&self, sub_id: &str) -> Result<String> { E::conversation_id(sub_id) } }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, Deserialize, Serialize)]
 pub struct Message { pub id: String, source_guid: String, pub created_at: u64, pub user_id: String, pub recipient_id: Option<String>, pub group_id: Option<String>, pub name: String, /*pub avatar_url: String,*/ pub text: Option<String>, pub system: Option<bool>, pub favorited_by: Vec<String> }
 impl Message {
     fn conversation_id(&self) -> Result<String> {
         let no_id = || ErrorKind::JsonTypeError("message had un-ID'ed parent").into();
-        self.recipient_id.clone().ok_or(no_id()).and_then(self::api::DirectMessages::conversation_id).or(self.group_id.clone().ok_or(no_id()))
+        self.recipient_id.as_ref().map(|ref s| s.as_str()).ok_or(no_id()).and_then(self::api::DirectMessages::conversation_id).or(self.group_id.clone().ok_or(no_id()))
     }
     pub fn like(&self) -> Result<()> { self::api::Likes::create(&self.conversation_id()?, &self.id) }
     pub fn unlike(&self) -> Result<()> { self::api::Likes::destroy(&self.conversation_id()?, &self.id) }
@@ -64,11 +64,11 @@ pub trait BidirRecipient<E: ReadMessageEndpoint> : Recipient<E> + ConversationId
 
 pub trait Recipient<E: MessageEndpoint> {
     fn id(&self) -> &str;
-    fn post_without_fallback(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Message> {
-        if text.len() >= 1000 { return Err(ErrorKind::TextTooLong(text, attachments).into()); }
+    fn post_without_fallback<S: std::borrow::Borrow<str>>(&self, text: S, attachments: Option<Vec<Attachment>>) -> Result<Message> {
+        if text.borrow().len() >= 1000 { return Err(ErrorKind::TextTooLong(text.borrow().to_owned(), attachments).into()); }
         Ok(Message::deserialize(E::create(self.id(), text, attachments.unwrap_or_default())?)?)
     }
-    fn post(&self, text: String, attachments: Option<Vec<Value>>) -> Result<Message> {
+    fn post<S: std::borrow::Borrow<str>>(&self, text: S, attachments: Option<Vec<Attachment>>) -> Result<Message> {
         match self.post_without_fallback(text, attachments) {
             Err(Error(ErrorKind::TextTooLong(t, a), _)) => {
                 let (prelude, payload) = if let Some(first) = t.lines().map(ToOwned::to_owned).next() {
@@ -77,18 +77,17 @@ pub trait Recipient<E: MessageEndpoint> {
                     } else { ("(Long message was converted into image.)".to_owned(), t) }
                 } else { ("(Long message was converted into image.)".to_owned(), t) };
                 let mut a = a.unwrap_or_default();
-                a.push(upload_image(render::render(payload)?)?);
+                a.push(Attachment::upload_image(render::render(payload)?)?);
                 self.post_without_fallback(prelude.to_owned(), Some(a))
             },
             x => x,
         }
     }
-    fn post_mentioning<'a, I: IntoIterator<Item=&'a str>>(&self, text: String, uids: I, attachments: Option<Vec<Value>>) -> Result<Message> {
-        let data = uids.into_iter().enumerate().map(|(i,u)| (u.to_owned(), i, 1)).collect::<Vec<_>>();
-        let i = data.len();
+    fn post_mentioning<'a, S: std::borrow::Borrow<str>, S2: std::borrow::Borrow<str>, I: IntoIterator<Item=S2>>(&self, text: S, uids: I, attachments: Option<Vec<Attachment>>) -> Result<Message> {
+        let (mentions, i) = Attachment::make_mentions(uids);
         let mut a = attachments.unwrap_or_default();
-        a.push(Mentions { data: data }.into());
-        self.post(format!("{: <1$}", text, i), Some(a))
+        a.push(mentions);
+        self.post(format!("{: <1$}", text.borrow(), i), Some(a))
     }
 }
 
@@ -180,15 +179,5 @@ impl Group {
     pub fn member_uids_except<'a: 'b, 'b>(&'a self, exception: &'b str) -> Box<Iterator<Item=&'b str> + 'b> {
         Box::new(self.member_uids().filter(move |&u| { u != exception }))
     }
-    pub fn mention_ids(&self, user_ids: &Vec<&str>) -> Value {
-        Mentions { data: user_ids.iter().enumerate().map(|(i, id)| (id.to_string(), i, 1usize)).collect() }.into()
-    }
-}
-
-#[derive(Deserialize)] struct ImageUrlEnvelope { url: String }
-pub fn upload_image<R: Into<reqwest::Body>>(image: R) -> Result<Value> {
-    let mut o = serde_json::Map::new();
-    o.insert("url".to_string(), ImageUrlEnvelope::deserialize(self::api::Images::create(image)?)?.url.into());
-    Ok(o.into())
 }
 

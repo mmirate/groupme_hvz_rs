@@ -15,6 +15,8 @@ static IMAGE_API_URL: &'static str = "https://image.groupme.com";
 //static API_KEY: &'static str = "hunter2";
 use errors::*;
 
+use super::attachments::Attachment;
+
 macro_rules! client {
     () => (reqwest::Client::new()?);
     //() => (reqwest::Client::with_http_proxy("localhost", 8080));
@@ -68,7 +70,7 @@ pub trait Endpoint {
 }
 
 #[derive(Serialize)] pub struct GroupsCreateReqEnvelope { pub name: String, pub description: Option<String>, pub image_url: Option<String>, pub share: Option<bool> }
-#[derive(Serialize)] pub struct GroupsUpdateReqEnvelope { pub name: Option<String>, pub description: Option<String>, pub image_url: Option<String>, pub share: Option<bool> }
+#[derive(Serialize)] pub struct GroupsUpdateReqEnvelope { #[serde(skip_serializing_if = "Option::is_none")] pub name: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] pub description: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] pub image_url: Option<String>, #[serde(skip_serializing_if = "Option::is_none")] pub share: Option<bool> }
 
 pub struct Groups;
 impl Endpoint for Groups { #[inline] fn base_url() -> url::Url { url_extend(url::Url::parse(API_URL).unwrap(), &["groups"]) } }
@@ -140,16 +142,16 @@ impl Members {
 }
 
 pub trait MessageEndpoint : Endpoint {
-    fn create(group_id: &str, text: String, attachments: Vec<Value>) -> Result<Value>;
+    fn create<S: std::borrow::Borrow<str>>(group_id: &str, text: S, attachments: Vec<Attachment>) -> Result<Value>;
 }
 
 pub trait ReadMessageEndpoint : MessageEndpoint {
     fn index(group_id: &str, which: &Option<MessageSelector>, limit: Option<usize>) -> Result<Value>;
-    fn conversation_id(sub_id: String) -> Result<String>;
+    fn conversation_id(sub_id: &str) -> Result<String>;
 }
 
-#[derive(Serialize)] struct MessagesCreateParameters { source_guid: String, text: String, attachments: Vec<Value> }
-#[derive(Serialize)] struct MessagesCreateEnvelope { message: MessagesCreateParameters }
+#[derive(Serialize)] struct MessagesCreateParameters<'a> { source_guid: String, text: &'a str, attachments: Vec<Attachment> }
+#[derive(Serialize)] struct MessagesCreateEnvelope<'a> { message: MessagesCreateParameters<'a> }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] pub enum MessageSelector { Before(String), Since(String), After(String) }
 pub struct Messages;
@@ -170,14 +172,14 @@ impl ReadMessageEndpoint for Messages {
         }
         response(client!().get(u.as_str())?.send(), "response")
     }
-    #[inline] fn conversation_id(sub_id: String) -> Result<String> { Ok(sub_id) }
+    #[inline] fn conversation_id(sub_id: &str) -> Result<String> { Ok(sub_id.into()) }
 }
 impl MessageEndpoint for Messages {
-    fn create(group_id: &str, text: String, attachments: Vec<Value>) -> Result<Value> {
+    fn create<S: std::borrow::Borrow<str>>(group_id: &str, text: S, attachments: Vec<Attachment>) -> Result<Value> {
         let u = Self::build_url(vec![group_id, "messages"]);
         let envelope = MessagesCreateEnvelope { message: MessagesCreateParameters {
             source_guid: { let t = time::get_time(); format!("{}-{}", t.sec, t.nsec) },
-            text: text,
+            text: text.borrow(),
             attachments: attachments
         } };
 
@@ -186,8 +188,8 @@ impl MessageEndpoint for Messages {
 }
 
 
-#[derive(Serialize)] struct DirectMessagesCreateParameters { source_guid: String, recipient_id: String, text: String, attachments: Vec<Value> }
-#[derive(Serialize)] struct DirectMessagesCreateEnvelope { direct_message: DirectMessagesCreateParameters }
+#[derive(Serialize)] struct DirectMessagesCreateParameters<'a> { source_guid: String, recipient_id: &'a str, text: &'a str, attachments: Vec<Attachment> }
+#[derive(Serialize)] struct DirectMessagesCreateEnvelope<'a> { direct_message: DirectMessagesCreateParameters<'a> }
 
 pub struct DirectMessages;
 impl Endpoint for DirectMessages { #[inline] fn base_url() -> url::Url { url_extend(url::Url::parse(API_URL).unwrap(), &["direct_messages"]) } }
@@ -205,31 +207,18 @@ impl ReadMessageEndpoint for DirectMessages {
         }
         response(client!().get(u.as_str())?.send(), "response")
     }
-    fn conversation_id(sub_id: String) -> Result<String> { Ok(User::get()?.user_id + "+" + &sub_id) }
+    fn conversation_id(sub_id: &str) -> Result<String> { Ok(User::get()?.user_id + "+" + sub_id) }
 }
 impl MessageEndpoint for DirectMessages {
-    fn create(recipient_id: &str, text: String, attachments: Vec<Value>) -> Result<Value> {
+    fn create<S: std::borrow::Borrow<str>>(recipient_id: &str, text: S, attachments: Vec<Attachment>) -> Result<Value> {
         let u = Self::build_url(vec![recipient_id]);
         let envelope = DirectMessagesCreateEnvelope { direct_message: DirectMessagesCreateParameters {
             source_guid: { let t = time::get_time(); format!("{}-{}", t.sec, t.nsec) },
-            recipient_id: recipient_id.to_string(),
-            text: text,
+            recipient_id: recipient_id,
+            text: text.borrow(),
             attachments: attachments
         } };
         response(client!().post(u.as_str())?.body(serde_json::to_string(&envelope)?).header(json_type()).send(), "response")
-    }
-}
-
-#[derive(Clone)] pub struct Mentions { pub data: Vec<(String, usize, usize)> }
-impl std::convert::Into<Value> for Mentions {
-    fn into(self) -> Value {
-        let mut o = serde_json::Map::new();
-        o.insert("type".to_string(), "mentions".into());
-        let (user_ids, loci) : (Vec<_>, Vec<_>) =
-            self.data.into_iter().map(|(user_id, start, len)| (user_id, vec![start, len])).unzip();
-        o.insert("user_ids".to_string(), user_ids.into());
-        o.insert("loci".to_string(), loci.into());
-        Value::Object(o)
     }
 }
 
@@ -249,16 +238,16 @@ impl Likes {
 #[derive(Serialize)] pub struct BotsCreateReqEnvelope { pub group_id: String, pub name: String, pub avatar_url: Option<String>, pub callback_url: Option<String> }
 #[derive(Serialize)] struct BotsCreateEnvelope { bot: BotsCreateReqEnvelope }
 
-#[derive(Serialize)] struct BotsMessageCreateEnvelope { bot_id: String, text: String, picture_url: Option<String>, attachments: Vec<Value> }
+#[derive(Serialize)] struct BotsMessageCreateEnvelope<'a> { bot_id: &'a str, text: &'a str, picture_url: Option<String>, attachments: Vec<Attachment> }
 
 pub struct Bots;
 impl Endpoint for Bots { #[inline] fn base_url() -> url::Url { url_extend(url::Url::parse(API_URL).unwrap(), &["bots"]) } }
 impl MessageEndpoint for Bots {
-    fn create(bot_id: &str, text: String, attachments: Vec<Value>) -> Result<Value> {
+    fn create<S: std::borrow::Borrow<str>>(bot_id: &str, text: S, attachments: Vec<Attachment>) -> Result<Value> {
         let u = Self::build_url(vec!["post"]);
         let envelope = BotsMessageCreateEnvelope {
-            bot_id: bot_id.to_owned(),
-            text: text,
+            bot_id: bot_id,
+            text: text.borrow(),
             picture_url: None,
             attachments: attachments
         };

@@ -1,7 +1,7 @@
-extern crate ctrlc;
 #[macro_use] extern crate clap;
-extern crate groupme_hvz_rs;
+extern crate ctrlc;
 #[macro_use] extern crate error_chain;
+extern crate groupme_hvz_rs;
 use groupme_hvz_rs::*;
 use groupme_hvz_rs::errors::*;
 
@@ -10,20 +10,7 @@ use std::io::Write;
 quick_main!(run);
 
 fn run() -> Result<()> {
-    let _matches = clap::App::new("HvZ/GroupMe interactor").version(crate_version!()).author(crate_authors!())
-        //.arg(clap::Arg::with_name("FACTION_GROUP_ID")
-        //     .required(true)
-        //     .index(1))
-        //.arg(clap::Arg::with_name("CNC_GROUP_ID")
-        //     .required(true)
-        //     .index(2))
-        //.arg(clap::Arg::with_name("GATECH_USERNAME")
-        //     .required(true)
-        //     .index(3))
-        //.arg(clap::Arg::with_name("GATECH_PASSWORD")
-        //     .required(true)
-        //     .index(4))
-        .get_matches();
+    let _matches = clap::App::new("HvZ/GroupMe interactor").version(crate_version!()).author(crate_authors!()).get_matches();
     let (factiongroupname, cncgroupname) = (std::env::var("FACTION_GROUP_NAME")?.to_string(), std::env::var("CNC_GROUP_NAME")?.to_string());
     let (mut factiongroup, mut cncgroup) = (None, None);
     {
@@ -57,7 +44,6 @@ fn run() -> Result<()> {
         let pair2 = pair.clone();
         ctrlc::set_handler(move || { let &(ref lock, ref cvar) = &*pair2; *(lock.lock().unwrap()) = true; cvar.notify_all(); }).expect("Error setting Ctrl-C handler");
     }
-    //let signal = chan_signal::notify(&[chan_signal::Signal::TERM, chan_signal::Signal::INT, chan_signal::Signal::HUP]);
     
     let &(ref lock, ref cvar) = &*pair;
     println!("Alive!");
