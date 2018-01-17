@@ -26,7 +26,7 @@ impl std::fmt::Display for Faction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "human", Faction::Zombie => "zombie", Faction::Admin => "admin", Faction::General => "general", }) }
 }
 impl std::fmt::Debug for Faction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "hum", Faction::Zombie => "zomb", Faction::Admin => "admin", Faction::General => "all", }) }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "human", Faction::Zombie => "zombie", Faction::Admin => "admin", Faction::General => "all", }) }
 }
 impl std::fmt::Binary for Faction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "h", Faction::Zombie => "z", Faction::Admin => "a", Faction::General => "?" }) }
@@ -80,12 +80,13 @@ impl Player {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] #[derive(Serialize, Deserialize)] pub struct Message { pub timestamp: chrono::DateTime<chrono::Local>, pub sender: Player, pub receiver: Faction, pub text: String, }
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] #[derive(Serialize, Deserialize)] pub struct Message { pub id: usize, pub timestamp: chrono::DateTime<chrono::Local>, pub sender: Player, pub receiver: Faction, pub text: String, }
 impl Message { pub fn from_tr<'a>(tr: scraper::ElementRef<'a>) -> Result<Self> {
     let col_selector = scraper::Selector::parse("td").map_err(|()| Error::from(ErrorKind::CSS))?;
     let link_selector = scraper::Selector::parse("a[href*=\"gtname\"]").map_err(|()| Error::from(ErrorKind::CSS))?;
     let cols : Vec<scraper::ElementRef> = tr.select(&col_selector).collect();
     Ok(Message{
+        id: tr.value().attr("id").ok_or(Error::from(ErrorKind::CSS))?.splitn(2, "chat_line_").nth(1).ok_or(Error::from(ErrorKind::CSS))?.parse::<usize>().map_err(|_| Error::from(ErrorKind::CSS))?,
         sender: Player::from_chat_link(cols[0].select(&link_selector).next().ok_or(Error::from(ErrorKind::Scraper("chat->tr->link:Player")))?)?,
         timestamp: chrono::Local.datetime_from_str(&format!("{}/{}", chrono::Local::today().year(), cols[1].inner_html().trim()), "%Y/%m/%d %H:%M")?,
         receiver: Faction::default(), text: cols[2].inner_html().trim().to_owned()})

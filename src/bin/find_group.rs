@@ -7,7 +7,7 @@ use groupme_hvz_rs::errors::*;
 
 quick_main!(|| -> Result<()> {
     println!("You are a member of the following groups:");
-    println!("");
+    println!();
     println!("#Ppl\tID      \tName");
     println!("====\t========\t====");
     for g in groupme::Group::list()? {

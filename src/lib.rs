@@ -1,5 +1,6 @@
 #![recursion_limit = "2048"]
 #![deny(warnings)]
+#![allow(unused_doc_comment)]
 
 extern crate chrono;
 extern crate cookie;
@@ -515,7 +516,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 "13094442" /* ??? */,
                 ];
             }
-            
+
             if 7 <= now.hour() && now.hour() < 23 && now.signed_duration_since(chrono::Local.timestamp(message.created_at as i64, 0)).num_hours() <= 6 {
                 let signature = format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' && c != '?' }, "")).collect::<Vec<String>>().join(" "));
                 if I_AM_DEAD_RE.is_match(&signature) {
@@ -535,7 +536,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     if let Some(m) = cs.name("message") {
                         let vox = BotRole::VoxPopuli.retrieve(&self.factionsyncer.group, &mut self.bots)?;
                         vox.post_mentioning(format!("[{}] {}", message.name, m.as_str()), self.factionsyncer.group.member_uids_except(message.user_id.as_str()), None)?;
-                        
+
                     }
                 }
             } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
@@ -547,7 +548,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                     let vox = BotRole::VoxPopuli.retrieve(&self.factionsyncer.group, &mut self.bots)?;
                     vox.post_mentioning(m.as_str(), THE_ADMINS.iter().cloned(), None)?;
                     //self.hvz.scraper.post_chat(hvz::Faction::Human, format!("@admins {} from GroupMe says, {:?}.", message.name, m).as_str())?;
-                    
+
                 }
             }
             Ok(())
@@ -579,7 +580,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 
         fn process_new_zombies(&mut self, new_zombies: Vec<hvz::Player>) -> Result<()> {
             self.factionsyncer.group.refresh()?;
-            let (not_found, to_remove) : (Vec<_>, Vec<(_,_)>) = 
+            let (not_found, to_remove) : (Vec<_>, Vec<(_,_)>) =
                 new_zombies.into_iter().partition_map(|z| self.mark_zombie(z).into());
             let not_kicked : Vec<(_,_)> = to_remove.into_iter().filter_map(|(death, removal)| {
                 if let Err(Error(ErrorKind::GroupRemovalFailed(rem), _)) = self.factionsyncer.group.remove(removal.clone()) {
