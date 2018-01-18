@@ -160,99 +160,120 @@ impl KillboardExt for Killboard {
     }
 }
 
-#[derive(Clone, Debug)] pub struct HvZScraper { cookiejar: cookie::CookieJar, last_login: std::time::Instant, username: String, password: String }
+trait CookieJarExt {
+    fn read_cookies<'b>(&self, rb: &'b mut reqwest::RequestBuilder) -> &'b mut reqwest::RequestBuilder;
+    fn write_cookies<'b>(&mut self, res: &'b mut reqwest::Response) -> &'b mut reqwest::Response;
+}
 
-impl HvZScraper {
-    pub fn new(username: String, password: String) -> HvZScraper { HvZScraper { cookiejar: cookie::CookieJar::new(), last_login: std::time::Instant::now() - std::time::Duration::from_secs(1200), username: username, password: password } }
+impl CookieJarExt for cookie::CookieJar {
     fn read_cookies<'b>(&self, rb: &'b mut reqwest::RequestBuilder) -> &'b mut reqwest::RequestBuilder {
         let mut h = reqwest::header::Cookie::new();
-        for c in self.cookiejar.iter() { h.set(c.name().to_owned(), c.value().to_owned()); }
+        for c in self.iter() { h.set(c.name().to_owned(), c.value().to_owned()); }
         rb.header(h)
     }
     fn write_cookies<'b>(&mut self, res: &'b mut reqwest::Response) -> &'b mut reqwest::Response {
-        for c in res.headers().get::<reqwest::header::SetCookie>().unwrap_or(&reqwest::header::SetCookie(vec![])).iter().filter_map(|x| cookie::Cookie::parse(x.clone()).ok()) { self.cookiejar.remove(c.clone()); self.cookiejar.add(c); }
+        for c in res.headers().get::<reqwest::header::SetCookie>().unwrap_or(&reqwest::header::SetCookie(vec![])).iter().filter_map(|x| cookie::Cookie::parse(x.clone()).ok()) { self.remove(c.clone()); self.add(c); }
         res
     }
-    fn _slurp<R: std::io::Read>(mut r: R) -> std::io::Result<String> { let mut buffer = Vec::<u8>::new(); r.read_to_end(&mut buffer).and_then(|_| Ok(String::from_utf8_lossy(&buffer).to_string())) }
-    #[inline] fn slurp(res: reqwest::Response) -> Result<String> { Ok(Self::_slurp(res)?) }
-    fn do_with_cookies(&mut self, rb: &mut reqwest::RequestBuilder, canfail: bool) -> Result<reqwest::Response> {
-        self.read_cookies(rb).send().map(|mut res| { self.write_cookies(&mut res); res }).map_err(Error::from).and_then(|mut res| {
+}
+
+trait RequestBuilderExt { fn send_with_cookies(&mut self, &mut cookie::CookieJar, canfail: bool) -> Result<reqwest::Response>; }
+impl RequestBuilderExt for reqwest::RequestBuilder {
+    fn send_with_cookies(&mut self, jar: &mut cookie::CookieJar, canfail: bool) -> Result<reqwest::Response> {
+        jar.read_cookies(self).send().map(|mut res| { jar.write_cookies(&mut res); res }).map_err(Error::from).and_then(|mut res| {
             if 509u16 == u16::from(res.status()) { bail!(ErrorKind::BandwidthLimitExceeded) }
             if !canfail { res = res.error_for_status().map_err(|e| -> Error { if e.is_client_error() || e.is_server_error() { if let Some(code) = e.status() { ErrorKind::HttpError(code).into() } else { e.into() } } else { e.into() } })?; }
             Ok(res)
         })
     }
-    fn _redirect_url(res: &reqwest::Response) -> Option<url::Url> {
-        match res.headers().get::<reqwest::header::Location>() { Some(ref loc) => { res.url().join(loc).ok() }, _ => None }
-    }
-    fn _fill_login_form(&self, doc: scraper::Html) -> Result<(String, url::Url)> {
+}
+
+#[derive(Debug)] struct HvZCreds { username: String, password: String }
+impl HvZCreds {
+    fn _fill_login_form(&self, doc: scraper::Html) -> Result<(BTreeMap<String, String>, url::Url)> {
         let form_selector = scraper::Selector::parse("form").map_err(|()| Error::from(ErrorKind::CSS))?;
         let form_control_selector = scraper::Selector::parse("form input[name][value]").map_err(|()| Error::from(ErrorKind::CSS))?;
-        let mut querystring = url::form_urlencoded::Serializer::new(String::new());
-        let querystring = querystring.append_pair("username", self.username.as_str()).append_pair("password", self.password.as_str());
+        let mut queryparams = BTreeMap::new();
+        queryparams.insert("username".to_owned(), self.username.clone());
+        queryparams.insert("password".to_owned(), self.password.clone());
         for e in doc.select(&form_control_selector) {
             if !(e.value().attr("type").map(|t| ["reset", "checkbox"].contains(&t)).unwrap_or(true))
                 && !(["username", "password"].contains(e.value().attr("name").as_ref().unwrap_or(&""))) {
-                querystring.append_pair(
-                    e.value().attr("name" ).ok_or(Error::from(ErrorKind::Scraper("login->form->element[name]" )))?,
-                    e.value().attr("value").ok_or(Error::from(ErrorKind::Scraper("login->form->element[value]")))?
+                queryparams.insert(
+                    e.value().attr("name" ).ok_or(Error::from(ErrorKind::Scraper("login->form->element[name]" )))?.to_owned(),
+                    e.value().attr("value").ok_or(Error::from(ErrorKind::Scraper("login->form->element[value]")))?.to_owned()
                 );
             }
         }
-        let querystring = querystring.finish();
         let u = url::Url::parse("https://login.gatech.edu/")?.join(doc.select(&form_selector).next().ok_or(Error::from(ErrorKind::Scraper("login->form")))?.value().attr("action").ok_or(Error::from(ErrorKind::Scraper("login->form[action]")))?)?;/*"https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules"*/
-        Ok((querystring, u))
+        Ok((queryparams, u))
     }
+}
+
+#[derive(Debug)] pub struct HvZScraper { cookiejar: cookie::CookieJar, last_login: std::time::Instant, creds: HvZCreds }
+
+impl HvZScraper {
+    pub fn new(username: String, password: String) -> HvZScraper { HvZScraper { cookiejar: cookie::CookieJar::new(), last_login: std::time::Instant::now() - std::time::Duration::from_secs(1200), creds: HvZCreds { username: username, password: password } } }
+
+    fn _slurp<R: std::io::Read>(mut r: R) -> std::io::Result<String> { let mut buffer = Vec::<u8>::new(); r.read_to_end(&mut buffer).and_then(|_| Ok(String::from_utf8_lossy(&buffer).to_string())) }
+    #[inline] fn slurp(res: reqwest::Response) -> Result<String> { Ok(Self::_slurp(res)?) }
     pub fn login(&mut self) -> Result<reqwest::Client> {
-        let client = reqwest::Client::new()?;
-        if self.last_login.elapsed() < std::time::Duration::from_secs(600) { return Ok(client); }
+        fn redirect_url_(res: &reqwest::Response) -> Option<url::Url> {
+            res.headers().get::<reqwest::header::Location>().and_then(|ref loc| res.url().join(loc).ok())
+        }
+        let client = reqwest::Client::new();
+        if self.last_login.elapsed() < std::time::Duration::from_secs(1200) { return Ok(client); }
         println!("Cached login is old; refreshing session.");
-        let res = self.do_with_cookies(&mut client.get(/*"https://hvz.gatech.edu/rules/"*/"https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f")?, true)?;
-        let client = reqwest::Client::builder()?.redirect(reqwest::RedirectPolicy::none()).build()?;
+        let cookiejar = &mut self.cookiejar;
+        let res = client.get("https://hvz.gatech.edu/rules/"/*"https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f"*/).send_with_cookies(cookiejar, true)?;
+        let client = reqwest::Client::builder().redirect(reqwest::RedirectPolicy::none()).build()?;
         if res.url().host_str().unwrap_or("") != "hvz.gatech.edu" {
             let login_page = if res.url().host_str().map(|h| h == "login.gatech.edu").unwrap_or(false) {
                 Self::slurp(res)?
             } else {
-                Self::slurp(self.do_with_cookies(&mut client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f")?, false)?)?
+                Self::slurp(client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f").send_with_cookies(cookiejar, false)?)?
             };
-            let (body, u) = self._fill_login_form(scraper::Html::parse_document(login_page.as_str()))?;
-            let mut res = self.do_with_cookies(&mut client.post(u.as_str())?.body(body).header(reqwest::header::ContentType::form_url_encoded()), true)?;
+            let (params, u) = self.creds._fill_login_form(scraper::Html::parse_document(login_page.as_str()))?;
+            let mut res = client.post(u.as_str()).form(&params).send_with_cookies(cookiejar, true)?;
             while res.url().host_str().unwrap_or("") != "hvz.gatech.edu" {
-                if let Some(loc) = Self::_redirect_url(&res) { if loc.host_str().unwrap_or("") == "hvz.gatech.edu" { break; } }
-                let document = scraper::Html::parse_document(Self::slurp(self.do_with_cookies(&mut client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f")?, true)?)?.as_str());
-                let (body, u) = self._fill_login_form(document)?;
-                res = self.do_with_cookies(&mut client.post(u.as_str())?.body(body).header(reqwest::header::ContentType::form_url_encoded()), true)?;
-                if !(res.status().is_success() || res.status().is_redirection()) { bail!(ErrorKind::GaTechCreds); }
+                if let Some(loc) = redirect_url_(&res) { if loc.host_str().unwrap_or("") == "hvz.gatech.edu" { break; } }
+                let document = scraper::Html::parse_document(Self::slurp(
+                    client.get("https://login.gatech.edu/cas/login?service=https%3a%2f%2fhvz.gatech.edu%2frules%2f").send_with_cookies(cookiejar, true)?
+                )?.as_str());
+                let (params, u) = self.creds._fill_login_form(document)?;
+                res = client.post(u.as_str()).form(&params).send_with_cookies(cookiejar, true)?;
+                ensure!(res.status().is_success() || res.status().is_redirection(), ErrorKind::GaTechCreds);
             }
-            while let Some(loc) = Self::_redirect_url(&res) {
-                res = self.do_with_cookies(&mut client.get(loc)?, true)?;
-                if !(res.status().is_success() || res.status().is_redirection()) {
-                    bail!(ErrorKind::GaTechCreds);
-                }
+            while let Some(loc) = redirect_url_(&res) {
+                res = client.get(loc).send_with_cookies(cookiejar, true)?;
+                ensure!(res.status().is_success() || res.status().is_redirection(), ErrorKind::GaTechCreds);
             }
         }
-        if self.do_with_cookies(&mut client.get("https://hvz.gatech.edu/rules/")?, true)?.url().host_str().unwrap_or("") != "hvz.gatech.edu" {
+        if client.get("https://hvz.gatech.edu/rules/").send_with_cookies(cookiejar, true)?.url().host_str().unwrap_or("") != "hvz.gatech.edu" {
             bail!(ErrorKind::GaTechCreds);
         }
-        let client = reqwest::Client::new()?; // reset the RedirectPolicy to default
+        let client = reqwest::Client::new(); // reset the RedirectPolicy to default
         self.last_login = std::time::Instant::now();
         Ok(client)
     }
     pub fn whois(&mut self, gtname: &str) -> Result<Player> {
         let client = self.login()?;
-        Player::from_document(scraper::Html::parse_document(Self::slurp(self.do_with_cookies(&mut client.get(&format!("https://hvz.gatech.edu/profile/?gtname={}", gtname))?, false)?)?.as_str()))
+        Player::from_document(scraper::Html::parse_document(Self::slurp(
+            client.get(&format!("https://hvz.gatech.edu/profile/?gtname={}", gtname)).send_with_cookies(&mut self.cookiejar, false)?
+        )?.as_str()))
     }
     fn shrink_to_fit<T>(mut v: Vec<T>) -> Vec<T> { v.shrink_to_fit(); v }
-    #[inline] pub fn whoami(&mut self) -> Result<Player> { let u = self.username.clone(); self.whois(u.as_str()) }
+    #[inline] pub fn whoami(&mut self) -> Result<Player> { let u = self.creds.username.clone(); self.whois(u.as_str()) }
     #[inline] fn trace<T: std::fmt::Debug>(x: T) -> T { /* println!("{:?}", x); */ x }
     pub fn fetch_killboard(&mut self) -> Result<Killboard> {
         let client = self.login()?;
 
         let doc = scraper::Html::parse_document(Self::trace(Self::slurp({
-            let mut res = self.do_with_cookies(&mut client.get("https://hvz.gatech.edu/killboard/")?, false)?;
+            let cookiejar = &mut self.cookiejar;
+            let mut res = client.get("https://hvz.gatech.edu/killboard/").send_with_cookies(cookiejar, false)?;
             while !res.url().as_str().contains("killboard") {
                 println!("Capstoneurs...");
-                res = self.do_with_cookies(&mut client.get("https://hvz.gatech.edu/killboard/")?, false)?;
+                res = client.get("https://hvz.gatech.edu/killboard/").send_with_cookies(cookiejar, false)?;
             }
             res
         })?.as_str()));
@@ -273,7 +294,9 @@ impl HvZScraper {
         for faction in Faction::chats() {
             if faction != Faction::General && faction != self.whoami()?.faction { continue; }
             ret.remove(&faction);
-            ret.insert(faction, Self::shrink_to_fit(scraper::Html::parse_fragment(Self::slurp(self.do_with_cookies(&mut client.post("https://hvz.gatech.edu/chat/_update.php")?.body(format!("aud={:?}", faction)).header(reqwest::header::ContentType::form_url_encoded()), false)?)?.as_str()).select(&row_selector).map(|tr| Ok(Message { receiver: faction, .. Message::from_tr(tr)? })).collect::<Result<Vec<_>>>()?));
+            ret.insert(faction, Self::shrink_to_fit(scraper::Html::parse_fragment(Self::slurp(
+                client.post("https://hvz.gatech.edu/chat/_update.php").form(&[("aud",format!("{:?}", faction))]).send_with_cookies(&mut self.cookiejar, false)?
+            )?.as_str()).select(&row_selector).map(|tr| Ok(Message { receiver: faction, .. Message::from_tr(tr)? })).collect::<Result<Vec<_>>>()?));
         }
         Ok(ret)
     }
@@ -282,14 +305,14 @@ impl HvZScraper {
         let mut ret = Panelboard::new();
         for kind in vec![/*PanelKind::Announcement, */PanelKind::Mission] {
             ret.remove(&kind);
-            ret.insert(kind, Self::shrink_to_fit(scraper::Html::parse_document(Self::slurp(self.do_with_cookies(&mut client.get(&format!("https://hvz.gatech.edu/{}s", kind))?, false)?)?.as_str()).select(&scraper::Selector::parse(&format!("div.panel.{}", kind)).map_err(|()| Error::from(ErrorKind::CSS))?
+            ret.insert(kind, Self::shrink_to_fit(scraper::Html::parse_document(Self::slurp(client.get(&format!("https://hvz.gatech.edu/{}s", kind)).send_with_cookies(&mut self.cookiejar, false)?)?.as_str()).select(&scraper::Selector::parse(&format!("div.panel.{}", kind)).map_err(|()| Error::from(ErrorKind::CSS))?
             ).map(|div| Ok(Panel { kind: kind, .. Panel::from_div(div)? })).collect::<Result<Vec<_>>>()?));
         }
         Ok(ret)
     }
     pub fn post_chat(&mut self, recipient: Faction, text: &str) -> Result<reqwest::Response> {
         let client = self.login()?;
-        self.do_with_cookies(&mut client.post("https://hvz.gatech.edu/chat/_post.php")?.body(url::form_urlencoded::Serializer::new(String::new()).append_pair("aud", &format!("{:?}", recipient)).append_pair("content", text).finish()).header(reqwest::header::ContentType::form_url_encoded()), false).map_err(From::from)
+        client.post("https://hvz.gatech.edu/chat/_post.php").form(&[("aud", format!("{:?}", recipient).as_str()), ("content", text)]).send_with_cookies(&mut self.cookiejar, false).map_err(From::from)
     }
 }
 

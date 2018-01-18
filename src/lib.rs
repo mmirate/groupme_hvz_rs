@@ -1,6 +1,5 @@
 #![recursion_limit = "2048"]
 #![deny(warnings)]
-#![allow(unused_doc_comment)]
 
 extern crate chrono;
 extern crate cookie;
@@ -18,14 +17,15 @@ extern crate scraper;
 extern crate serde_json;
 extern crate serde;
 #[macro_use(static_slice)] extern crate static_slice;
-extern crate time;
 extern crate url;
+extern crate uuid;
 pub mod groupme;
 pub mod hvz;
 pub mod syncer;
 pub mod render;
 
 pub mod errors {
+    #![allow(unused_doc_comment)]
     error_chain! {
         foreign_links {
             Reqwest (::reqwest::Error);
