@@ -6,6 +6,7 @@ use url;
 use std;
 use std::iter::FromIterator;
 use std::collections::BTreeMap;
+//use strum;
 use chrono::{TimeZone,Datelike};
 use errors::*;
 
@@ -15,13 +16,19 @@ pub type Panelboard = BTreeMap<PanelKind, Vec<Panel>>;
 
 fn sorted<T: Ord>(mut v: Vec<T>) -> Vec<T> { v.sort(); v }
 
-#[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)] #[derive(Serialize, Deserialize)] pub enum Faction { General, Human, Zombie, Admin }
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] #[derive(Serialize, Deserialize, EnumString, ToString, AsRefStr, )]
+pub enum Faction {
+    #[strum(serialize="general")] General,
+    #[strum(serialize="human")] Human,
+    #[strum(serialize="zombie")] Zombie,
+    #[strum(serialize="admin")] Admin
+}
 impl Default for Faction { fn default() -> Faction { Faction::General } }
 impl Faction {
     #[inline] pub fn killboards() -> Vec<Faction> { vec![Faction::Human, Faction::Zombie] }
     #[inline] pub fn chats() -> Vec<Faction> { vec![Faction::General, Faction::Human, Faction::Zombie] }
     #[inline] pub fn populated() -> Vec<Faction> { vec![Faction::Admin, Faction::Human, Faction::Zombie] }
-}
+}/*
 impl std::fmt::Display for Faction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "human", Faction::Zombie => "zombie", Faction::Admin => "admin", Faction::General => "general", }) }
 }
@@ -33,7 +40,7 @@ impl std::fmt::Binary for Faction {
 }
 impl<'b> From<&'b str> for Faction { fn from(s: &'b str) -> Faction { match s.to_lowercase().as_str() {
     "human" | "hum" | "h" => Faction::Human, "zombie" | "zomb" | "z" => Faction::Zombie, "admin" => Faction::Admin, _ => Faction::General,
-} } }
+} } }*/
 
 use std::cmp::Ordering;
 
@@ -49,7 +56,7 @@ impl Player {
         Ok(Player {
             gtname: String::new(),
             playername: doc.select(&playername_selector).next().ok_or(Error::from(ErrorKind::Scraper("doc->Player.playername")))?.inner_html().trim().to_string(),
-            faction: Faction::from(doc.select(&faction_selector).next().ok_or(Error::from(ErrorKind::Scraper("doc->Player.faction")))?.inner_html().trim()),
+            faction: doc.select(&faction_selector).next().ok_or(Error::from(ErrorKind::Scraper("doc->Player.faction")))?.inner_html().trim().parse()?,
             kb_gtname: None
         })
     }
@@ -281,7 +288,7 @@ impl HvZScraper {
         let mut ret = Killboard::new();
         for faction in Faction::killboards() {
             ret.remove(&faction);
-            ret.insert(faction, sorted(doc.select(&scraper::Selector::parse(&Self::trace(format!("#{:b}killboard a[href*=\"gtname\"]", &faction))).map_err(|()| Error::from(ErrorKind::CSS))?).map(|link| { Ok(Player { faction: faction, .. Player::from_kb_link(link)? }) }).collect::<Result<Vec<_>>>()?));
+            ret.insert(faction, sorted(doc.select(&scraper::Selector::parse(&Self::trace(format!("#{}-killboard a[href*=\"gtname\"]", faction.as_ref()))).map_err(|()| Error::from(ErrorKind::CSS))?).map(|link| { Ok(Player { faction: faction, .. Player::from_kb_link(link)? }) }).collect::<Result<Vec<_>>>()?));
         }
         Ok(ret)
     }
@@ -295,7 +302,7 @@ impl HvZScraper {
             if faction != Faction::General && faction != self.whoami()?.faction { continue; }
             ret.remove(&faction);
             ret.insert(faction, Self::shrink_to_fit(scraper::Html::parse_fragment(Self::slurp(
-                client.post("https://hvz.gatech.edu/chat/_update.php").form(&[("aud",format!("{:?}", faction))]).send_with_cookies(&mut self.cookiejar, false)?
+                client.post("https://hvz.gatech.edu/chat/_update.php").form(&[("aud",faction.as_ref())]).send_with_cookies(&mut self.cookiejar, false)?
             )?.as_str()).select(&row_selector).map(|tr| Ok(Message { receiver: faction, .. Message::from_tr(tr)? })).collect::<Result<Vec<_>>>()?));
         }
         Ok(ret)
@@ -312,7 +319,7 @@ impl HvZScraper {
     }
     pub fn post_chat(&mut self, recipient: Faction, text: &str) -> Result<reqwest::Response> {
         let client = self.login()?;
-        client.post("https://hvz.gatech.edu/chat/_post.php").form(&[("aud", format!("{:?}", recipient).as_str()), ("content", text)]).send_with_cookies(&mut self.cookiejar, false).map_err(From::from)
+        client.post("https://hvz.gatech.edu/chat/_post.php").form(&[("aud", recipient.as_ref()), ("content", text)]).send_with_cookies(&mut self.cookiejar, false).map_err(From::from)
     }
 }
 

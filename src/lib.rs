@@ -19,6 +19,8 @@ extern crate serde;
 #[macro_use(static_slice)] extern crate static_slice;
 extern crate url;
 extern crate uuid;
+extern crate strum;
+#[macro_use] extern crate strum_macros;
 pub mod groupme;
 pub mod hvz;
 pub mod syncer;
@@ -35,6 +37,7 @@ pub mod errors {
             UrlParsing (::url::ParseError);
             DateFormatParsing (::chrono::format::ParseError);
             EnvironmentVar (::std::env::VarError);
+            EnumParseError (::strum::ParseError);
         }
         errors {
             RLE {}
@@ -240,7 +243,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         fn nickname(&self) -> String {
             match self {
                 &BotRole::VoxPopuli => "Vox Populi".to_string(),
-                &BotRole::Chat(f) => capitalize(&format!("{} Chat", f)),
+                &BotRole::Chat(f) => capitalize(&format!("{:?} Chat", f)),
                 &BotRole::Killboard(hvz::Faction::Zombie) => "The Messenger".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Fleet Sgt. Ho".to_string(),
                 &BotRole::Killboard(_) => "ERROR: UNKNOWN BOT".to_string(),
@@ -265,10 +268,10 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
         fn watdo(&self) -> String {
             match self {
                 &BotRole::VoxPopuli => "If certain people start their message with \"@Everyone\" or \"@everyone\", I'll repeat the message in such a way that it will \"@mention\" *everyone*.\nAbuse this, and there will be consequences.".to_string(),
-                &BotRole::Chat(f) => format!("I'm the voice of {} chat. When someone posts something there, I'll tell you about it within a few seconds.{}", f, if f == hvz::Faction::General { " Except during gameplay hours, because spam is bad." } else { "" }),
+                &BotRole::Chat(f) => format!("I'm the voice of {:?} chat. When someone posts something there, I'll tell you about it within a few seconds.{}", f, if f == hvz::Faction::General { " Except during gameplay hours, because spam is bad." } else { "" }),
                 &BotRole::Killboard(hvz::Faction::Zombie) => "If someone shows up on the other side of the killboard, I'll report it here within a few minutes, and simultaneously try to go about kicking them. If I can't kick them, I'll give a holler.".to_string(),
                 &BotRole::Killboard(hvz::Faction::Human) => "Whenever someone signs up, I'll report it here.".to_string(),
-                &BotRole::Killboard(x) => format!("ERROR: THE \"{}\" FACTION LACKS A KILLBOARD SECTION", x),
+                &BotRole::Killboard(x) => format!("ERROR: THE \"{:?}\" FACTION LACKS A KILLBOARD SECTION", x),
                 &BotRole::Panel(hvz::PanelKind::Mission) => "If a mission arises, I'll contact you.".to_string(),
                 &BotRole::Panel(hvz::PanelKind::Announcement) => "I announce the nightly announcements. #DeptOfRedundancyDept".to_string(),
             }
@@ -541,7 +544,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 }
             } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
                 if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
-                    self.hvz.scraper.post_chat(f.as_str().into(), format!("[{} from GroupMe] {}", message.name, m.as_str()).as_str())?;
+                    self.hvz.scraper.post_chat(f.as_str().to_lowercase().parse()?, format!("[{} from GroupMe] {}", message.name, m.as_str()).as_str())?;
                 }
             } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) { // TODO REDO
                 if let Some(m) = cs.name("message") {
