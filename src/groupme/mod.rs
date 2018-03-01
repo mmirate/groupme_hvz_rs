@@ -21,7 +21,7 @@ pub use self::api::User;
 pub trait ConversationId<E: ReadMessageEndpoint> { fn conversation_id(&self, sub_id: &str) -> Result<String> { E::conversation_id(sub_id) } }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq, Deserialize, Serialize)]
-pub struct Message { pub id: String, source_guid: String, pub created_at: u64, pub user_id: String, pub recipient_id: Option<String>, pub group_id: Option<String>, pub name: String, /*pub avatar_url: String,*/ pub text: Option<String>, pub system: Option<bool>, pub favorited_by: Vec<String> }
+pub struct Message { pub id: String, source_guid: String, pub created_at: u64, pub user_id: String, pub recipient_id: Option<String>, pub group_id: Option<String>, pub name: String, /*pub avatar_url: String,*/ #[serde(default)] pub text: String, pub system: Option<bool>, pub favorited_by: Vec<String> }
 impl Message {
     fn conversation_id(&self) -> Result<String> {
         let no_id = || ErrorKind::JsonTypeError("message had un-ID'ed parent").into();
@@ -29,7 +29,6 @@ impl Message {
     }
     pub fn like(&self) -> Result<()> { self::api::Likes::create(&self.conversation_id()?, &self.id) }
     pub fn unlike(&self) -> Result<()> { self::api::Likes::destroy(&self.conversation_id()?, &self.id) }
-    pub fn text(&self) -> String { self.text.clone().unwrap_or_default() } // GroupMe. Did you really have to put '"text": null' instead of '"text": ""'? Really?! Look at how much work this makes me do!
 }
 
 #[derive(Deserialize)] struct MessagesEnvelope { messages: Vec<Message> }

@@ -394,7 +394,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 
         fn process_cnc_message(&mut self, message: groupme::Message) -> Result<()> {
             if !message.favorited_by.is_empty() { return Ok(()); }
-            let _text = message.text().clone();
+            let _text = message.text.clone();
             let words = _text.split('!').nth(1).unwrap_or_default().split_whitespace().collect::<Vec<_>>();
             let mission_complete = if words == ["mic", "check", "please"] {
                 let mc = self.cncsyncer.group.post("<> mic check; aye, aye".to_string(), None)?;
@@ -521,7 +521,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
             }
 
             if 7 <= now.hour() && now.hour() < 23 && now.signed_duration_since(chrono::Local.timestamp(message.created_at as i64, 0)).num_hours() <= 6 {
-                let signature = format!(" {} ", message.text().to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' && c != '?' }, "")).collect::<Vec<String>>().join(" "));
+                let signature = format!(" {} ", message.text.to_lowercase().split_whitespace().map(|word| word.replace(|c: char| { !c.is_alphabetic() && c != '"' && c != '?' }, "")).collect::<Vec<String>>().join(" "));
                 if I_AM_DEAD_RE.is_match(&signature) {
                     if !([&self.factionsyncer.group.creator_user_id, &me.user_id].contains(&&message.user_id)) {
                         if let Some(member) = self.factionsyncer.group.members.iter().find(|&m| m.user_id == message.user_id) {
@@ -534,7 +534,7 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
                 }
             }
             if self.state.dormant { return Ok(()); }
-            if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text().as_str()) {
+            if let Some(cs) = MESSAGE_TO_EVERYONE_RE.captures(message.text.as_str()) {
                 if ALLOWED_MESSAGEBLASTERS.contains(message.user_id.as_str()) {
                     if let Some(m) = cs.name("message") {
                         let vox = BotRole::VoxPopuli.retrieve(&self.factionsyncer.group, &mut self.bots)?;
@@ -542,11 +542,11 @@ pub mod conduit_to_groupme { // A "god" object. What could go wrong?
 
                     }
                 }
-            } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text().as_str()) {
+            } else if let Some(cs) = MESSAGE_TO_HVZCHAT_RE.captures(message.text.as_str()) {
                 if let (Some(f), Some(m)) = (cs.name("faction"), cs.name("message")) {
                     self.hvz.scraper.post_chat(f.as_str().to_lowercase().parse()?, format!("[{} from GroupMe] {}", message.name, m.as_str()).as_str())?;
                 }
-            } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text().as_str()) { // TODO REDO
+            } else if let Some(cs) = MESSAGE_TO_ADMINS_RE.captures(message.text.as_str()) { // TODO REDO
                 if let Some(m) = cs.name("message") {
                     let vox = BotRole::VoxPopuli.retrieve(&self.factionsyncer.group, &mut self.bots)?;
                     vox.post_mentioning(m.as_str(), THE_ADMINS.iter().cloned(), None)?;
