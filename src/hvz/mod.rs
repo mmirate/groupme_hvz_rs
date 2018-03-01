@@ -28,19 +28,7 @@ impl Faction {
     #[inline] pub fn killboards() -> Vec<Faction> { vec![Faction::Human, Faction::Zombie] }
     #[inline] pub fn chats() -> Vec<Faction> { vec![Faction::General, Faction::Human, Faction::Zombie] }
     #[inline] pub fn populated() -> Vec<Faction> { vec![Faction::Admin, Faction::Human, Faction::Zombie] }
-}/*
-impl std::fmt::Display for Faction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "human", Faction::Zombie => "zombie", Faction::Admin => "admin", Faction::General => "general", }) }
 }
-impl std::fmt::Debug for Faction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "human", Faction::Zombie => "zombie", Faction::Admin => "admin", Faction::General => "all", }) }
-}
-impl std::fmt::Binary for Faction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { Faction::Human => "h", Faction::Zombie => "z", Faction::Admin => "a", Faction::General => "?" }) }
-}
-impl<'b> From<&'b str> for Faction { fn from(s: &'b str) -> Faction { match s.to_lowercase().as_str() {
-    "human" | "hum" | "h" => Faction::Human, "zombie" | "zomb" | "z" => Faction::Zombie, "admin" => Faction::Admin, _ => Faction::General,
-} } }*/
 
 use std::cmp::Ordering;
 
@@ -49,7 +37,6 @@ impl PartialEq for Player { fn eq(&self, other: &Player) -> bool { (&self.gtname
 impl Eq for Player {}
 impl Ord for Player { fn cmp(&self, other: &Player) -> Ordering { (&self.playername, &self.gtname).cmp(&(&other.playername, &other.gtname)) } }
 impl PartialOrd for Player { fn partial_cmp(&self, other: &Player) -> Option<Ordering> { Some(self.cmp(other)) } }
-//impl Player { pub fn erase(&self) -> Player { Player { faction: Faction::General, .. self.clone() } } }
 impl Player {
     pub fn from_document(doc: scraper::Html) -> Result<Self> {
         let (faction_selector, playername_selector) = (scraper::Selector::parse("div.page-header > h3").map_err(|()| Error::from(ErrorKind::CSS))?, scraper::Selector::parse("div.page-header > h1").map_err(|()| Error::from(ErrorKind::CSS))?);
@@ -99,10 +86,7 @@ impl Message { pub fn from_tr<'a>(tr: scraper::ElementRef<'a>) -> Result<Self> {
         receiver: Faction::default(), text: cols[2].inner_html().trim().to_owned()})
 } }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] #[derive(Serialize, Deserialize)] pub enum PanelKind { Announcement, Mission }
-impl std::fmt::Display for PanelKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { write!(f, "{}", match *self { PanelKind::Announcement => "announcement", PanelKind::Mission => "mission", }) }
-}
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] #[derive(Serialize, Deserialize, EnumString, ToString, AsRefStr, )] pub enum PanelKind { #[strum(serialize="announcement")] Announcement, #[strum(serialize="mission")] Mission }
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)] #[derive(Serialize, Deserialize)] pub struct MissionWW { pub start: chrono::DateTime<chrono::Local>, pub end: chrono::DateTime<chrono::Local>, pub location: String }
 impl MissionWW {
     pub fn from_p<'a>(p: scraper::ElementRef<'a>) -> Option<MissionWW> {
@@ -133,21 +117,24 @@ impl MissionWW {
         partial.to_datetime_with_timezone(&chrono::Local).map_err(From::from)
     }
 }
-#[derive(Clone, Debug)] #[derive(Serialize, Deserialize)] pub struct Panel { pub kind: PanelKind, pub title: String, pub particulars: Option<MissionWW>, pub text: String }
+#[derive(Clone, Debug)] #[derive(Serialize, Deserialize)] pub struct Panel { pub kind: PanelKind, pub id: u64, pub title: String, pub particulars: Option<MissionWW>, pub text: String }
 impl PartialEq for Panel { fn eq(&self, other: &Panel) -> bool {
-    if let (&Some(_), &Some(_)) = (&self.particulars, &other.particulars) { (&self.kind, &self.particulars) == (&other.kind, &other.particulars) } else { (&self.kind, &self.title) == (&other.kind, &other.title) }
+    if let (&Some(_), &Some(_)) = (&self.particulars, &other.particulars) { (&self.kind, &self.id, &self.particulars) == (&other.kind, &other.id, &other.particulars) } else { (&self.kind, &self.id, &self.title) == (&other.kind, &other.id, &other.title) }
 } }
 impl Eq for Panel {}
 impl Ord for Panel { fn cmp(&self, other: &Panel) -> Ordering {
-    if let (&Some(_), &Some(_)) = (&self.particulars, &other.particulars) { (&self.kind, &self.particulars).cmp(&(&other.kind, &other.particulars)) } else { (&self.kind, &self.title).cmp(&(&other.kind, &other.title)) }
+    if let (&Some(_), &Some(_)) = (&self.particulars, &other.particulars) { (&self.kind, &self.id, &self.particulars).cmp(&(&other.kind, &other.id, &other.particulars)) } else { (&self.kind, &self.id, &self.title).cmp(&(&other.kind, &self.id, &other.title)) }
 } }
 impl PartialOrd for Panel { fn partial_cmp(&self, other: &Panel) -> Option<Ordering> { Some(self.cmp(other)) } }
 impl Panel { pub fn from_div<'a>(div: scraper::ElementRef<'a>) -> Result<Panel> {
+    // TODO: (a) discriminate panel types via class; (b) grab panel IDs
+    let kind = div.value().classes().filter_map(|s| s.parse::<PanelKind>().ok()).next().ok_or(Error::from(ErrorKind::Scraper("Panel.kind")))?;
     let title_selector = scraper::Selector::parse(".panel-title").map_err(|()| Error::from(ErrorKind::CSS))?;
     let body_selector = scraper::Selector::parse(".panel-body" ).map_err(|()| Error::from(ErrorKind::CSS))?;
     let partics_selector = scraper::Selector::parse("p.mission_particulars").map_err(|()| Error::from(ErrorKind::CSS))?;
     Ok(Panel {
-        kind: PanelKind::Announcement,
+        kind: kind,
+        id: (div.value().id().ok_or(Error::from(ErrorKind::Scraper("Panel#")))?)[kind.as_ref().len()..].parse().map_err(|_| Error::from(ErrorKind::Scraper("Panel##")))?,
         title: div.select(&title_selector).next().ok_or(Error::from(ErrorKind::Scraper("Panel.title")))?.text().collect::<Vec<_>>().concat().trim().to_owned(),
         particulars: div.select(&partics_selector).next().and_then(MissionWW::from_p),
         text: div.select(&body_selector).next().ok_or(Error::from(ErrorKind::Scraper("Panel.text")))?.text().collect::<Vec<_>>().concat().trim().to_owned()
@@ -167,18 +154,18 @@ impl KillboardExt for Killboard {
     }
 }
 
-trait CookieJarExt {
-    fn read_cookies<'b>(&self, rb: &'b mut reqwest::RequestBuilder) -> &'b mut reqwest::RequestBuilder;
-    fn write_cookies<'b>(&mut self, res: &'b mut reqwest::Response) -> &'b mut reqwest::Response;
+trait CookieJarExt<'b> {
+    fn read_cookies(&self, rb: &'b mut reqwest::RequestBuilder) -> &'b mut reqwest::RequestBuilder;
+    fn write_cookies(&mut self, res: &'b mut reqwest::Response) -> &'b mut reqwest::Response;
 }
 
-impl CookieJarExt for cookie::CookieJar {
-    fn read_cookies<'b>(&self, rb: &'b mut reqwest::RequestBuilder) -> &'b mut reqwest::RequestBuilder {
+impl<'b> CookieJarExt<'b> for cookie::CookieJar {
+    fn read_cookies(&self, rb: &'b mut reqwest::RequestBuilder) -> &'b mut reqwest::RequestBuilder {
         let mut h = reqwest::header::Cookie::new();
         for c in self.iter() { h.set(c.name().to_owned(), c.value().to_owned()); }
         rb.header(h)
     }
-    fn write_cookies<'b>(&mut self, res: &'b mut reqwest::Response) -> &'b mut reqwest::Response {
+    fn write_cookies(&mut self, res: &'b mut reqwest::Response) -> &'b mut reqwest::Response {
         for c in res.headers().get::<reqwest::header::SetCookie>().unwrap_or(&reqwest::header::SetCookie(vec![])).iter().filter_map(|x| cookie::Cookie::parse(x.clone()).ok()) { self.remove(c.clone()); self.add(c); }
         res
     }
@@ -312,7 +299,7 @@ impl HvZScraper {
         let mut ret = Panelboard::new();
         for kind in vec![/*PanelKind::Announcement, */PanelKind::Mission] {
             ret.remove(&kind);
-            ret.insert(kind, Self::shrink_to_fit(scraper::Html::parse_document(Self::slurp(client.get(&format!("https://hvz.gatech.edu/{}s", kind)).send_with_cookies(&mut self.cookiejar, false)?)?.as_str()).select(&scraper::Selector::parse(&format!("div.panel.{}", kind)).map_err(|()| Error::from(ErrorKind::CSS))?
+            ret.insert(kind, Self::shrink_to_fit(scraper::Html::parse_document(Self::slurp(client.get(&format!("https://hvz.gatech.edu/{}s", kind.as_ref())).send_with_cookies(&mut self.cookiejar, false)?)?.as_str()).select(&scraper::Selector::parse(&format!("div.panel.{}", kind.as_ref())).map_err(|()| Error::from(ErrorKind::CSS))?
             ).map(|div| Ok(Panel { kind: kind, .. Panel::from_div(div)? })).collect::<Result<Vec<_>>>()?));
         }
         Ok(ret)

@@ -9,8 +9,8 @@ clap = "^2"
 cookie = { version = "^0.10", features = ["percent-encode"] }
 ctrlc = { version = "^3", features = ["termination"] }
 error-chain = "^0.11"
-gotham = "^0.1"
-hyper = "0.11.14"
+gotham = "0.2.0"
+hyper = "0.11.21"
 image = "^0.18"
 itertools = "^0.7"
 lazy_static = "^1"
